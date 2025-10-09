@@ -1,6 +1,19 @@
 [package]
 name = "sadi"
+description = "Semi-Automatic Dependency Injector"
 version = "0.1.0"
 edition = "2024"
+repository = "https://github.com/JoaoPedro61/sadi"
+homepage = "https://github.com/JoaoPedro61/sadi"
+license-file = "LICENSE"
+readme = "README.md"
+keywords = [
+  "dependency-injection",
+  "di",
+  "rust",
+  "sadi",
+  "semi-automatic",
+  "axum-di",
+]
 
 [dependencies]
