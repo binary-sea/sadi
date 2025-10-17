@@ -6,6 +6,9 @@ use std::{
     rc::Rc,
 };
 
+#[cfg(feature = "tracing")]
+use tracing::{debug, error, info, trace, warn};
+
 /// Error kinds for SaDi dependency injection operations
 #[derive(Debug, Clone, PartialEq)]
 pub enum ErrorKind {
@@ -31,10 +34,24 @@ pub struct Error {
 impl Error {
     /// Create a new SaDiError
     pub fn new(kind: ErrorKind, message: impl Into<String>) -> Self {
-        Self {
+        let error = Self {
             kind,
             message: message.into(),
-        }
+        };
+
+        #[cfg(feature = "tracing")]
+        {
+            if matches!(
+                kind,
+                ErrorKind::FactoryAlreadyRegistered | ErrorKind::ServiceNotRegistered
+            ) {
+                warn!("{}", error);
+            } else {
+                error!("{}", error);
+            }
+        };
+
+        error
     }
 
     /// Create a service not registered error
@@ -78,7 +95,7 @@ impl Error {
 
 impl fmt::Display for Error {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "{}", self.message)
+        write!(f, "({:?}) - {}", self.kind, self.message)
     }
 }
 
@@ -100,6 +117,9 @@ pub struct SaDi {
 impl SaDi {
     /// Create a new DI container
     pub fn new() -> Self {
+        #[cfg(feature = "tracing")]
+        debug!("Creating new SaDi container");
+
         Self {
             factories: HashMap::new(),
             singletons: HashMap::new(),
@@ -127,17 +147,28 @@ impl SaDi {
         T: 'static + Any,
         F: Fn(&SaDi) -> T + 'static,
     {
+        let type_name = std::any::type_name::<T>();
         let type_id = TypeId::of::<T>();
 
+        #[cfg(feature = "tracing")]
+        trace!(
+            "Attempting to register transient factory for type: {}",
+            type_name
+        );
+
         if self.factories.contains_key(&type_id) {
-            return Err(Error::factory_already_registered(
-                std::any::type_name::<T>(),
-                "transient",
-            ));
+            return Err(Error::factory_already_registered(type_name, "transient"));
         }
 
         self.factories
             .insert(type_id, Box::new(move |di| Box::new(factory(di))));
+
+        #[cfg(feature = "tracing")]
+        info!(
+            "Successfully registered transient factory for type: {}",
+            type_name
+        );
+
         Ok(self)
     }
 
@@ -152,19 +183,36 @@ impl SaDi {
     ///
     /// Returns Ok(T) with a new instance if factory is registered, or Err with error message
     pub fn try_get<T: 'static + Any>(&self) -> Result<T, Error> {
+        let type_name = std::any::type_name::<T>();
         let type_id = TypeId::of::<T>();
 
+        #[cfg(feature = "tracing")]
+        trace!(
+            "Attempting to get transient instance for type: {}",
+            type_name
+        );
+
         if let Some(factory) = self.factories.get(&type_id) {
+            #[cfg(feature = "tracing")]
+            debug!(
+                "Found transient factory for type: {}, creating instance",
+                type_name
+            );
+
             let boxed_any = factory(self);
             match boxed_any.downcast::<T>() {
-                Ok(instance) => Ok(*instance),
-                Err(_) => Err(Error::type_mismatch(std::any::type_name::<T>())),
+                Ok(instance) => {
+                    #[cfg(feature = "tracing")]
+                    debug!(
+                        "Successfully created transient instance for type: {}",
+                        type_name
+                    );
+                    Ok(*instance)
+                }
+                Err(_) => Err(Error::type_mismatch(type_name)),
             }
         } else {
-            Err(Error::service_not_registered(
-                std::any::type_name::<T>(),
-                "transient",
-            ))
+            Err(Error::service_not_registered(type_name, "transient"))
         }
     }
 
@@ -188,17 +236,28 @@ impl SaDi {
         T: 'static + Any,
         F: Fn(&SaDi) -> T + 'static,
     {
+        let type_name = std::any::type_name::<T>();
         let type_id = TypeId::of::<T>();
 
+        #[cfg(feature = "tracing")]
+        trace!(
+            "Attempting to register singleton factory for type: {}",
+            type_name
+        );
+
         if self.singletons.contains_key(&type_id) {
-            return Err(Error::factory_already_registered(
-                std::any::type_name::<T>(),
-                "singleton",
-            ));
+            return Err(Error::factory_already_registered(type_name, "singleton"));
         }
 
         self.singletons
             .insert(type_id, Box::new(move |di| Box::new(factory(di))));
+
+        #[cfg(feature = "tracing")]
+        info!(
+            "Successfully registered singleton factory for type: {}",
+            type_name
+        );
+
         Ok(self)
     }
 
@@ -214,36 +273,62 @@ impl SaDi {
     ///
     /// Returns Ok(Rc<T>) with the cached instance if factory is registered, or Err with error message
     pub fn try_get_singleton<T: 'static + Any>(&self) -> Result<Rc<T>, Error> {
+        let type_name = std::any::type_name::<T>();
         let type_id = TypeId::of::<T>();
+
+        #[cfg(feature = "tracing")]
+        trace!(
+            "Attempting to get singleton instance for type: {}",
+            type_name
+        );
 
         // Check cache first
         {
             let cache = self.singleton_cache.borrow();
             if let Some(cached) = cache.get(&type_id) {
+                #[cfg(feature = "tracing")]
+                debug!("Found cached singleton instance for type: {}", type_name);
+
                 return cached
                     .clone()
                     .downcast::<T>()
-                    .map_err(|_| Error::cached_type_mismatch(std::any::type_name::<T>()));
+                    .map_err(|_| Error::cached_type_mismatch(type_name));
             }
         }
 
+        #[cfg(feature = "tracing")]
+        debug!(
+            "No cached instance found for type: {}, attempting to create new singleton",
+            type_name
+        );
+
         // Create new instance and cache it
         if let Some(factory) = self.singletons.get(&type_id) {
+            #[cfg(feature = "tracing")]
+            debug!(
+                "Found singleton factory for type: {}, creating and caching instance",
+                type_name
+            );
+
             let boxed_any = factory(self);
             match boxed_any.downcast::<T>() {
                 Ok(boxed_t) => {
                     let rc_instance = Rc::new(*boxed_t);
                     let rc_any: Rc<dyn Any> = rc_instance.clone();
                     self.singleton_cache.borrow_mut().insert(type_id, rc_any);
+
+                    #[cfg(feature = "tracing")]
+                    info!(
+                        "Successfully created and cached singleton instance for type: {}",
+                        type_name
+                    );
+
                     Ok(rc_instance)
                 }
-                Err(_) => Err(Error::type_mismatch(std::any::type_name::<T>())),
+                Err(_) => Err(Error::type_mismatch(type_name)),
             }
         } else {
-            Err(Error::service_not_registered(
-                std::any::type_name::<T>(),
-                "singleton",
-            ))
+            Err(Error::service_not_registered(type_name, "singleton"))
         }
     }
 }
