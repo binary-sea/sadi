@@ -2,10 +2,87 @@ use std::{
     any::{Any, TypeId},
     cell::RefCell,
     collections::HashMap,
+    fmt,
     rc::Rc,
 };
 
-use crate::error::SaDiError;
+/// Error kinds for SaDi dependency injection operations
+#[derive(Debug, Clone, PartialEq)]
+pub enum ErrorKind {
+    /// Service factory not registered
+    ServiceNotRegistered,
+    /// Factory returned wrong type
+    TypeMismatch,
+    /// Cached instance has wrong type
+    CachedTypeMismatch,
+    /// Factory already registered
+    FactoryAlreadyRegistered,
+}
+
+/// Error structure for SaDi operations
+#[derive(Debug, Clone)]
+pub struct Error {
+    /// The kind of error that occurred
+    pub kind: ErrorKind,
+    /// Human-readable error message
+    pub message: String,
+}
+
+impl Error {
+    /// Create a new SaDiError
+    pub fn new(kind: ErrorKind, message: impl Into<String>) -> Self {
+        Self {
+            kind,
+            message: message.into(),
+        }
+    }
+
+    /// Create a service not registered error
+    pub fn service_not_registered(type_name: &str, service_type: &str) -> Self {
+        Self::new(
+            ErrorKind::ServiceNotRegistered,
+            format!(
+                "No {} factory registered for type: {}",
+                service_type, type_name
+            ),
+        )
+    }
+
+    /// Create a type mismatch error
+    pub fn type_mismatch(type_name: &str) -> Self {
+        Self::new(
+            ErrorKind::TypeMismatch,
+            format!("Factory returned wrong type for: {}", type_name),
+        )
+    }
+
+    /// Create a cached type mismatch error
+    pub fn cached_type_mismatch(type_name: &str) -> Self {
+        Self::new(
+            ErrorKind::CachedTypeMismatch,
+            format!("Cached instance has wrong type for: {}", type_name),
+        )
+    }
+
+    /// Create a factory already registered error
+    pub fn factory_already_registered(type_name: &str, service_type: &str) -> Self {
+        Self::new(
+            ErrorKind::FactoryAlreadyRegistered,
+            format!(
+                "{} factory already registered for type: {}",
+                service_type, type_name
+            ),
+        )
+    }
+}
+
+impl fmt::Display for Error {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{}", self.message)
+    }
+}
+
+impl std::error::Error for Error {}
 
 /// A simple, flexible dependency injection container
 ///
@@ -45,7 +122,7 @@ impl SaDi {
     /// Try to register a transient factory
     ///
     /// Returns Ok(Self) if successful, or Err if factory already exists
-    pub fn try_factory<T, F>(mut self, factory: F) -> Result<Self, SaDiError>
+    pub fn try_factory<T, F>(mut self, factory: F) -> Result<Self, Error>
     where
         T: 'static + Any,
         F: Fn(&SaDi) -> T + 'static,
@@ -53,7 +130,7 @@ impl SaDi {
         let type_id = TypeId::of::<T>();
 
         if self.factories.contains_key(&type_id) {
-            return Err(SaDiError::factory_already_registered(
+            return Err(Error::factory_already_registered(
                 std::any::type_name::<T>(),
                 "transient",
             ));
@@ -74,22 +151,19 @@ impl SaDi {
     /// Try to get a transient instance
     ///
     /// Returns Ok(T) with a new instance if factory is registered, or Err with error message
-    pub fn try_get<T: 'static + Any>(&self) -> Result<T, String> {
+    pub fn try_get<T: 'static + Any>(&self) -> Result<T, Error> {
         let type_id = TypeId::of::<T>();
 
         if let Some(factory) = self.factories.get(&type_id) {
             let boxed_any = factory(self);
             match boxed_any.downcast::<T>() {
                 Ok(instance) => Ok(*instance),
-                Err(_) => Err(format!(
-                    "Factory returned wrong type for: {}",
-                    std::any::type_name::<T>()
-                )),
+                Err(_) => Err(Error::type_mismatch(std::any::type_name::<T>())),
             }
         } else {
-            Err(format!(
-                "No transient factory registered for type: {}",
-                std::any::type_name::<T>()
+            Err(Error::service_not_registered(
+                std::any::type_name::<T>(),
+                "transient",
             ))
         }
     }
@@ -109,7 +183,7 @@ impl SaDi {
     /// Try to register a singleton factory
     ///
     /// Returns Ok(Self) if successful, or Err if factory already exists
-    pub fn try_factory_singleton<T, F>(mut self, factory: F) -> Result<Self, SaDiError>
+    pub fn try_factory_singleton<T, F>(mut self, factory: F) -> Result<Self, Error>
     where
         T: 'static + Any,
         F: Fn(&SaDi) -> T + 'static,
@@ -117,7 +191,7 @@ impl SaDi {
         let type_id = TypeId::of::<T>();
 
         if self.singletons.contains_key(&type_id) {
-            return Err(SaDiError::factory_already_registered(
+            return Err(Error::factory_already_registered(
                 std::any::type_name::<T>(),
                 "singleton",
             ));
@@ -139,19 +213,17 @@ impl SaDi {
     /// Try to get a singleton instance
     ///
     /// Returns Ok(Rc<T>) with the cached instance if factory is registered, or Err with error message
-    pub fn try_get_singleton<T: 'static + Any>(&self) -> Result<Rc<T>, String> {
+    pub fn try_get_singleton<T: 'static + Any>(&self) -> Result<Rc<T>, Error> {
         let type_id = TypeId::of::<T>();
 
         // Check cache first
         {
             let cache = self.singleton_cache.borrow();
             if let Some(cached) = cache.get(&type_id) {
-                return cached.clone().downcast::<T>().map_err(|_| {
-                    format!(
-                        "Cached instance has wrong type for: {}",
-                        std::any::type_name::<T>()
-                    )
-                });
+                return cached
+                    .clone()
+                    .downcast::<T>()
+                    .map_err(|_| Error::cached_type_mismatch(std::any::type_name::<T>()));
             }
         }
 
@@ -165,15 +237,12 @@ impl SaDi {
                     self.singleton_cache.borrow_mut().insert(type_id, rc_any);
                     Ok(rc_instance)
                 }
-                Err(_) => Err(format!(
-                    "Factory returned wrong type for: {}",
-                    std::any::type_name::<T>()
-                )),
+                Err(_) => Err(Error::type_mismatch(std::any::type_name::<T>())),
             }
         } else {
-            Err(format!(
-                "No singleton factory registered for type: {}",
-                std::any::type_name::<T>()
+            Err(Error::service_not_registered(
+                std::any::type_name::<T>(),
+                "singleton",
             ))
         }
     }
