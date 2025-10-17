@@ -20,6 +20,8 @@ pub enum ErrorKind {
     CachedTypeMismatch,
     /// Factory already registered
     FactoryAlreadyRegistered,
+    /// Circular dependency detected
+    CircularDependency,
 }
 
 /// Error structure for SaDi operations
@@ -91,6 +93,17 @@ impl Error {
             ),
         )
     }
+
+    /// Create a circular dependency error
+    pub fn circular_dependency(dependency_chain: &[&str]) -> Self {
+        Self::new(
+            ErrorKind::CircularDependency,
+            format!(
+                "Circular dependency detected: {}",
+                dependency_chain.join(" -> ")
+            ),
+        )
+    }
 }
 
 impl fmt::Display for Error {
@@ -112,6 +125,8 @@ pub struct SaDi {
     singletons: HashMap<TypeId, Box<dyn Fn(&SaDi) -> Box<dyn Any>>>,
     /// Cache for singleton instances
     singleton_cache: RefCell<HashMap<TypeId, Rc<dyn Any>>>,
+    /// Stack to track current resolution chain for circular dependency detection
+    resolution_stack: RefCell<Vec<(TypeId, &'static str)>>,
 }
 
 impl SaDi {
@@ -124,7 +139,35 @@ impl SaDi {
             factories: HashMap::new(),
             singletons: HashMap::new(),
             singleton_cache: RefCell::new(HashMap::new()),
+            resolution_stack: RefCell::new(Vec::new()),
         }
+    }
+
+    /// Check for circular dependencies and add type to resolution stack
+    fn check_circular_dependency(
+        &self,
+        type_id: TypeId,
+        type_name: &'static str,
+    ) -> Result<(), Error> {
+        let mut stack = self.resolution_stack.borrow_mut();
+
+        // Check if this type is already in the resolution stack
+        if let Some(pos) = stack.iter().position(|(id, _)| *id == type_id) {
+            // Build the dependency chain for error message
+            let mut chain: Vec<&str> = stack[pos..].iter().map(|(_, name)| *name).collect();
+            chain.push(type_name);
+
+            return Err(Error::circular_dependency(&chain));
+        }
+
+        // Add current type to stack
+        stack.push((type_id, type_name));
+        Ok(())
+    }
+
+    /// Remove type from resolution stack
+    fn pop_resolution_stack(&self) {
+        self.resolution_stack.borrow_mut().pop();
     }
 
     /// Register a transient factory
@@ -192,6 +235,9 @@ impl SaDi {
             type_name
         );
 
+        // Check for circular dependency before proceeding
+        self.check_circular_dependency(type_id, type_name)?;
+
         if let Some(factory) = self.factories.get(&type_id) {
             #[cfg(feature = "tracing")]
             debug!(
@@ -199,8 +245,12 @@ impl SaDi {
                 type_name
             );
 
-            let boxed_any = factory(self);
-            match boxed_any.downcast::<T>() {
+            let result = factory(self);
+
+            // Remove from stack before processing result
+            self.pop_resolution_stack();
+
+            match result.downcast::<T>() {
                 Ok(instance) => {
                     #[cfg(feature = "tracing")]
                     debug!(
@@ -212,6 +262,8 @@ impl SaDi {
                 Err(_) => Err(Error::type_mismatch(type_name)),
             }
         } else {
+            // Remove from stack before returning error
+            self.pop_resolution_stack();
             Err(Error::service_not_registered(type_name, "transient"))
         }
     }
@@ -282,7 +334,7 @@ impl SaDi {
             type_name
         );
 
-        // Check cache first
+        // Check cache first (no circular dependency check needed for cached instances)
         {
             let cache = self.singleton_cache.borrow();
             if let Some(cached) = cache.get(&type_id) {
@@ -295,6 +347,9 @@ impl SaDi {
                     .map_err(|_| Error::cached_type_mismatch(type_name));
             }
         }
+
+        // Check for circular dependency before creating new instance
+        self.check_circular_dependency(type_id, type_name)?;
 
         #[cfg(feature = "tracing")]
         debug!(
@@ -310,8 +365,12 @@ impl SaDi {
                 type_name
             );
 
-            let boxed_any = factory(self);
-            match boxed_any.downcast::<T>() {
+            let result = factory(self);
+
+            // Remove from stack before processing result
+            self.pop_resolution_stack();
+
+            match result.downcast::<T>() {
                 Ok(boxed_t) => {
                     let rc_instance = Rc::new(*boxed_t);
                     let rc_any: Rc<dyn Any> = rc_instance.clone();
@@ -328,6 +387,8 @@ impl SaDi {
                 Err(_) => Err(Error::type_mismatch(type_name)),
             }
         } else {
+            // Remove from stack before returning error
+            self.pop_resolution_stack();
             Err(Error::service_not_registered(type_name, "singleton"))
         }
     }
