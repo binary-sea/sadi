@@ -1,17 +1,15 @@
-[package]
-name = "sadi"
-description = "Semi-Automatic Dependency Injector"
+[workspace]
+members = ["sadi"]
+default-members = ["sadi"]
+resolver = "2"
+
+[workspace.metadata.spellcheck]
+config = "spellcheck.toml"
+
+[workspace.package]
 version = "0.1.0"
 edition = "2024"
 repository = "https://github.com/JoaoPedro61/sadi"
 homepage = "https://github.com/JoaoPedro61/sadi"
 license-file = "LICENSE"
-readme = "README.md"
-keywords = ["dependency-injection", "di", "sadi", "semi-automatic", "axum-di"]
 authors = ["João Pedro Martins <mjoaopedro61@gmail.com>"]
-
-[dependencies]
-tracing = { version = "0.1", optional = true }
-
-[features]
-tracing = ["dep:tracing"]
