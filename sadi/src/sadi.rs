@@ -37,7 +37,7 @@ impl Error {
     /// Create a new SaDiError
     pub fn new(kind: ErrorKind, message: impl Into<String>) -> Self {
         let error = Self {
-            kind,
+            kind: kind.clone(),
             message: message.into(),
         };
 
