@@ -1,4 +1,4 @@
-# .github/workflows/release_dispatch.yml
+# .github/workflows/dispatch.yml
 on:
   workflow_dispatch:
     inputs:
