@@ -1,0 +1,49 @@
+# .github/workflows/dispatch.yml
+on:
+  workflow_dispatch:
+    inputs:
+      level:
+        description: "Semver level to bump (patch, minor, major, release, rc, beta, alpha)"
+        required: true
+        default: "patch"
+      package:
+        description: "Optional: package name to release (for workspaces). Leave empty to release root package."
+        required: false
+jobs:
+  cargo-release:
+    name: Run cargo-release (bump, tag, publish)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout (full history for tags)
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Install Rust toolchain
+        uses: actions-rs/toolchain@v1
+        with:
+          toolchain: stable
+          override: true
+
+      - name: Install cargo-release
+        run: cargo install cargo-release --force
+
+      - name: Configure git user
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+
+      - name: Run cargo-release
+        env:
+          CARGO_REGISTRY_TOKEN: ${{ secrets.CRATES_IO_TOKEN }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          # If you have a workspace and want to release a specific package, pass --package NAME.
+          if [ -n "${{ github.event.inputs.package }}" ]; then
+            echo "Releasing package: ${{ github.event.inputs.package }}"
+            cargo release ${{ github.event.inputs.level }} --package "${{ github.event.inputs.package }}" --execute
+          else
+            echo "Releasing root package"
+            cargo release ${{ github.event.inputs.level }} --execute
+          fi
+          
