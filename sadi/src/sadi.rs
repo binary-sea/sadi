@@ -207,16 +207,14 @@ impl Error {
         };
 
         #[cfg(feature = "tracing")]
-        {
-            if matches!(
-                kind,
-                ErrorKind::FactoryAlreadyRegistered | ErrorKind::ServiceNotRegistered
-            ) {
-                warn!("{}", error);
-            } else {
-                error!("{}", error);
-            }
-        };
+        if matches!(
+            kind,
+            ErrorKind::FactoryAlreadyRegistered | ErrorKind::ServiceNotRegistered
+        ) {
+            warn!("{}", error);
+        } else {
+            error!("{}", error);
+        }
 
         error
     }
@@ -411,15 +409,35 @@ impl std::error::Error for Error {}
 /// - Creating separate containers per thread
 /// - Using thread-safe service implementations (Arc, Mutex, etc.)
 /// - Wrapping the entire container in appropriate synchronization primitives
+///
+/// Type alias for factory functions that create transient service instances.
+///
+/// A factory function takes a reference to the DI container and returns a boxed
+/// instance of any type. The container uses type erasure to store different
+/// factory types in the same collection.
+type FactoryFunction = Box<dyn Fn(&SaDi) -> Box<dyn Any>>;
+
+/// Type alias for singleton cache storage.
+///
+/// The cache maps TypeId to reference-counted instances wrapped in trait objects.
+/// This allows multiple services to share the same singleton instance safely.
+type SingletonCache = RefCell<HashMap<TypeId, Rc<dyn Any>>>;
+
+/// Type alias for the resolution stack used in circular dependency detection.
+///
+/// Each entry contains the TypeId and type name of a service currently being resolved.
+/// This stack helps detect cycles in the dependency graph during service creation.
+type ResolutionStack = RefCell<Vec<(TypeId, &'static str)>>;
+
 pub struct SaDi {
     /// Factories for transient services (new instance each time)
-    factories: HashMap<TypeId, Box<dyn Fn(&SaDi) -> Box<dyn Any>>>,
+    factories: HashMap<TypeId, FactoryFunction>,
     /// Factories for singleton services (cached instances)
-    singletons: HashMap<TypeId, Box<dyn Fn(&SaDi) -> Box<dyn Any>>>,
+    singletons: HashMap<TypeId, FactoryFunction>,
     /// Cache for singleton instances
-    singleton_cache: RefCell<HashMap<TypeId, Rc<dyn Any>>>,
+    singleton_cache: SingletonCache,
     /// Stack to track current resolution chain for circular dependency detection
-    resolution_stack: RefCell<Vec<(TypeId, &'static str)>>,
+    resolution_stack: ResolutionStack,
 }
 
 impl SaDi {

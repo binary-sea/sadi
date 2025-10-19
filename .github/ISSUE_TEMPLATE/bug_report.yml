@@ -1,0 +1,90 @@
+---
+name: 🐛 Bug Report
+about: Create a report to help us improve SaDi
+title: '[Bug] '
+labels: ['bug', 'triage']
+assignees: ''
+---
+
+## 🐛 Bug Description
+
+<!-- A clear and concise description of what the bug is -->
+
+## 🔄 To Reproduce
+
+Steps to reproduce the behavior:
+
+1. Set up SaDi container with...
+2. Register services with...
+3. Call method...
+4. See error
+
+**Minimal reproduction code:**
+
+```rust
+use sadi::SaDi;
+
+// Please provide a minimal, complete example that reproduces the issue
+let container = SaDi::new()
+    .factory(|_| MyService::new());
+
+// What you did that caused the issue
+let result = container.get::<MyService>();
+```
+
+## 💥 Expected vs Actual Behavior
+
+**Expected behavior:**
+<!-- A clear description of what you expected to happen -->
+
+**Actual behavior:**
+<!-- A clear description of what actually happened -->
+
+**Error message (if any):**
+```
+Paste the full error message here
+```
+
+## 🖥️ Environment
+
+- **Rust version:** `rustc --version`
+- **SaDi version:** (from Cargo.toml)
+- **Operating System:** (e.g., Ubuntu 20.04, macOS 13, Windows 11)
+- **Features enabled:** (e.g., `tracing`)
+
+## 📋 Additional Context
+
+<!-- Add any other context about the problem here -->
+
+### Dependency Graph
+
+<!-- If relevant, describe your service dependency structure -->
+
+```
+ServiceA -> ServiceB -> ServiceC
+         -> ServiceD
+```
+
+### Cargo.toml dependencies
+
+```toml
+[dependencies]
+sadi = { version = "x.y.z", features = ["tracing"] }
+# ... other relevant dependencies
+```
+
+## 🧪 Debugging Information
+
+<!-- If you've done any debugging, please share what you found -->
+
+- [ ] I have verified this works in a previous version: ___
+- [ ] I have checked existing issues and this is not a duplicate
+- [ ] I can reproduce this consistently
+- [ ] I have tried with minimal dependencies
+
+## 📚 Checklist
+
+- [ ] I have provided a minimal reproduction case
+- [ ] I have included the full error message
+- [ ] I have specified my environment details
+- [ ] I have searched existing issues to avoid duplicates

@@ -1,0 +1,111 @@
+---
+name: ✨ Feature Request
+about: Suggest an enhancement or new feature for SaDi
+title: '[Feature] '
+labels: ['enhancement', 'feature-request']
+assignees: ''
+---
+
+## 🚀 Feature Description
+
+<!-- A clear and concise description of the feature you'd like to see -->
+
+## 🎯 Problem Statement
+
+**Is your feature request related to a problem?**
+<!-- A clear description of what the problem is. Ex. I'm always frustrated when... -->
+
+**Use case:**
+<!-- Describe the specific use case this feature would solve -->
+
+## 💡 Proposed Solution
+
+<!-- Describe the solution you'd like in detail -->
+
+**API Design (if applicable):**
+
+```rust
+// How would you like to use this feature?
+let container = SaDi::new()
+    .your_new_feature(parameters);
+    
+// Example usage
+let result = container.some_new_method();
+```
+
+## 🔄 Alternatives Considered
+
+<!-- Describe alternative solutions or features you've considered -->
+
+- **Alternative 1:** Description and why it's not ideal
+- **Alternative 2:** Description and why it's not ideal
+- **Current workaround:** How you're currently solving this (if any)
+
+## 📋 Additional Context
+
+<!-- Add any other context, screenshots, or examples about the feature request -->
+
+### Related Features
+
+<!-- Are there existing SaDi features this would integrate with? -->
+
+- [ ] Service registration
+- [ ] Dependency resolution
+- [ ] Lifecycle management
+- [ ] Error handling
+- [ ] Tracing integration
+- [ ] Other: ___
+
+### Expected Benefits
+
+- **Performance:** How this would improve performance (if applicable)
+- **Developer Experience:** How this would make SaDi easier to use
+- **Functionality:** What new capabilities this would enable
+
+## 🧪 Implementation Considerations
+
+<!-- Optional: If you have thoughts on implementation -->
+
+**Complexity level:**
+- [ ] Simple (small API addition)
+- [ ] Medium (new module or significant changes)
+- [ ] Complex (major architectural changes)
+
+**Breaking changes:**
+- [ ] This would be a breaking change
+- [ ] This would be backward compatible
+- [ ] Unsure about compatibility impact
+
+**Dependencies:**
+<!-- Would this require new external dependencies? -->
+
+## 🎨 Examples from Other Libraries
+
+<!-- Optional: Examples from other DI frameworks that implement similar features -->
+
+**Library:** (e.g., .NET DI, Spring, Dagger)
+```language
+// Example code showing how other libraries handle this
+```
+
+## 📚 Checklist
+
+- [ ] I have searched existing issues to avoid duplicates
+- [ ] I have provided a clear use case for this feature
+- [ ] I have considered the impact on existing functionality
+- [ ] I have provided examples of how I'd like to use this feature
+- [ ] This feature aligns with SaDi's goals (type-safe, zero-cost abstraction, simple API)
+
+---
+
+## 🤝 Contributing
+
+- [ ] I would be interested in contributing this feature
+- [ ] I would need guidance on the implementation approach
+- [ ] I can provide additional examples or use cases if needed
+
+**Development experience:**
+<!-- Your experience level with Rust/DI containers (helps us provide appropriate guidance) -->
+- [ ] New to Rust
+- [ ] Experienced with Rust, new to DI
+- [ ] Experienced with both Rust and DI patterns

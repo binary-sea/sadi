@@ -1,0 +1,8 @@
+blank_issues_enabled: false
+contact_links:
+  - name: 💬 Question or Discussion
+    url: https://github.com/JoaoPedro61/sadi/discussions
+    about: Ask questions or discuss ideas about SaDi dependency injection
+  - name: 🚀 Feature Idea Discussion
+    url: https://github.com/JoaoPedro61/sadi/discussions/categories/ideas
+    about: Discuss potential features before creating a formal request

@@ -297,7 +297,7 @@ fn main() -> Result<(), Error> {
 
     println!(
         "🔄 Different UserService instances? {}",
-        &user_service1 as *const _ != &user_service2 as *const _
+        !std::ptr::eq(&user_service1, &user_service2)
     );
 
     // But they share the same database singleton

@@ -1,18 +1,43 @@
-# Git flow for this Rust crate (updated for cargo-release)
+# Git Workflow for SaDi
 
-Goals
-- Support stable (current) releases, plus alpha and beta pre-releases.
-- Keep release process reproducible and automatable using cargo-release (and optional artifact builds on tag via CI or goreleaser).
-- Keep trunk (main) always releasable (stable), and use develop for integration.
+## 🎯 Goals
 
-Branches (short)
-- main — stable production branch. Only merged PRs that are release-ready.
-- develop — integration branch for the next stable release.
-- feature/* — short-lived features branched off develop.
-- fix/* — bugfix branches off develop (or main for hotfixes).
-- hotfix/* — critical fixes made off main, merged back to main and develop.
-- alpha/* — long-living or short-living branches for alpha tracks (optional). Merge into develop when ready.
-- beta/* — beta release branch for wider testing before stable.
+- Support stable releases with semantic versioning
+- Keep release process reproducible and automated using `cargo-release`
+- Maintain `main` branch always in releasable state
+- Ensure high code quality through PR reviews and automated checks
+- Align with SaDi's contribution guidelines and issue management
+
+## 🌳 Branch Strategy
+
+### Main Branches
+- **`main`** — Stable production branch. All releases are tagged from here.
+
+### Development Branches
+- **`feature/description`** — New features (e.g., `feature/async-support`)
+- **`fix/description`** — Bug fixes (e.g., `fix/circular-dependency-detection`)
+- **`docs/description`** — Documentation updates (e.g., `docs/api-examples`)
+- **`hotfix/description`** — Critical fixes for production issues
+
+### Branch Naming Guidelines
+
+Follow the patterns established in our contributing guidelines:
+```bash
+# Features
+git checkout -b feature/container-scoping
+git checkout -b feature/conditional-registration
+
+# Bug fixes  
+git checkout -b fix/memory-leak-in-factory
+git checkout -b fix/thread-safety-issue
+
+# Documentation
+git checkout -b docs/contributing-guide
+git checkout -b docs/api-reference-update
+
+# Hotfixes (urgent production fixes)
+git checkout -b hotfix/security-vulnerability
+```
 
 Tagging / versioning (cargo-release)
 - Use semantic versioning, with pre-release identifiers for alpha/beta.
@@ -29,20 +54,72 @@ Tagging / versioning (cargo-release)
 - Tags are canonical triggers for the publish/build-release workflow: `refs/tags/v*`.
 - Do not manually change the version in Cargo.toml on main/develop except when preparing a release in the normal documented flow; prefer cargo-release to keep commits and tags consistent.
 
-Typical flow (recommended two-step pattern)
-- Day-to-day work:
-  - Create feature branches from develop: `feature/awesome-thing`.
-  - Open PRs against develop. When reliable and tested, merge to develop.
-- Preparing a beta/alpha for the next release:
-  - Use cargo-release locally or via the release workflow with a pre-release identifier: e.g. cargo release minor --pre-release beta --execute (or run with the inputs your CI dispatch provides).
-  - cargo-release will set version to `x.y.z-beta.N`, commit, tag `vX.Y.Z-beta.N`, and (if configured) publish to crates.io.
-  - CI tag workflow runs on the new tag and builds GitHub Release artifacts.
-- Releasing stable:
-  - Merge develop into main, ensure work is merged and tested (you can leave Cargo.toml version as-is if you plan to bump via cargo-release), then run cargo-release (manual dispatch) with the appropriate level (patch/minor/major).
-  - cargo-release will update Cargo.toml to `x.y.z`, commit, tag `vX.Y.Z`, push, and publish to crates.io.
-  - The pushed tag triggers CI that builds artifacts and creates a GitHub Release with attached binaries.
-- Hotfix:
-  - Branch from main -> `hotfix/x.y.z` -> implement fix -> run cargo-release patch (or bump in branch and let cargo-release tag/publish) -> merge into main and develop -> tag and publish.
+## 🔄 Development Workflow
+
+### Daily Development
+
+1. **Stay synchronized with main:**
+   ```bash
+   git checkout main
+   git pull origin main
+   ```
+
+2. **Create feature branch:**
+   ```bash
+   git checkout -b feature/your-awesome-feature
+   ```
+
+3. **Development cycle:**
+   ```bash
+   # Make changes
+   git add .
+   git commit -m "feat: add awesome feature implementation"
+   
+   # Ensure quality (run frequently during development)
+   cargo test --all
+   cargo clippy --workspace --all-targets --all-features -- -D warnings
+   cargo fmt
+   ```
+
+4. **Push and create PR:**
+   ```bash
+   git push origin feature/your-awesome-feature
+   # Open PR using our PR template on GitHub
+   ```
+
+### PR Requirements (Enforced by Template)
+
+**Before opening PR:**
+- [ ] All tests pass: `cargo test --all`
+- [ ] No clippy warnings: `cargo clippy --workspace --all-targets --all-features -- -D warnings`
+- [ ] Code is formatted: `cargo fmt`
+- [ ] Documentation updated for API changes
+- [ ] Examples added for new features
+
+**PR must include:**
+- Clear motivation and problem description
+- Summary of implementation changes
+- Test coverage for new functionality
+- Documentation updates (inline docs, README if needed)
+- Adherence to SaDi's API design principles
+
+### Issue-Driven Development
+
+Follow our issue template workflow:
+- **Bug fixes**: Reference the bug report issue number
+- **Features**: Reference the feature request issue number
+- **Use issue discussions**: For questions and clarifications before coding
+
+### Quality Gates
+
+All PRs must pass:
+1. **Automated CI checks** (tests, clippy, formatting)
+2. **Code review** focusing on:
+   - Type safety and zero-cost abstractions
+   - API ergonomics and consistency
+   - Test coverage and documentation
+   - Alignment with SaDi's design principles
+3. **No direct commits to main** except for releases
 
 Workspaces
 - For a workspace:
@@ -69,22 +146,82 @@ Pre-release and crates.io
 - Pre-release crates (alpha/beta) are valid on crates.io and are published the same way. Do not reuse version strings.
 - If you wish to avoid publishing pre-releases to crates.io automatically, run cargo-release with --no-publish in CI or adjust publish = false in .release.toml for those runs.
 
-Branch protections & reviews
-- Protect main and develop.
-- Require PRs and at least one approving review for main (maybe two).
-- Require passing CI checks before merging.
-- Consider requiring signed commits if desired.
-- Decide policy for accepting cargo-release commits/tags:
-  - cargo-release will create commits and tags; either allow the CI bot to push those, or have maintainers merge the version bump commit created by cargo-release locally and push tags manually if you want stricter control.
+## 🛡️ Branch Protection & Review Policy
 
-Testing & safety
-- Test locally first: cargo release patch --dry-run
-- Test CI without publishing: cargo release <level> --execute --no-publish or set publish = false temporarily.
-- Use a staging crate or scoped registry if you want to test publishes in a non-production registry.
+### Main Branch Protection
+- **Protected branch**: `main` requires PRs for all changes
+- **Required reviews**: At least one approving review
+- **Required checks**: All CI status checks must pass
+- **No force pushes**: Maintain clean history
+- **Merge method**: Squash and merge (clean linear history)
 
-Notes / examples
-- Tags: use `v{{version}}` format (e.g., v1.2.3) and treat tags as the single source of truth for releases.
-- Avoid changing the version manually after cargo-release has tagged/published — if you need a hotfix immediately after a release, create a hotfix branch and run cargo-release again.
-- If you want richer cross-compile release artifacts later, consider using goreleaser on tag events; cargo-release still creates canonical tags and can publish crates.io, and goreleaser produces binaries and uploads them to the GitHub Release.
+### Review Process
+1. **Automated checks**: CI runs tests, clippy, formatting
+2. **Human review**: Focus on:
+   - Code quality and SaDi design principles
+   - Test coverage and documentation
+   - API consistency and type safety
+   - Performance implications
+3. **Feedback resolution**: Address all comments before merge
+4. **Maintainer approval**: Required before merge
 
-This document describes the flow and conventions. See RELEASE_PROCESS.md for step-by-step commands and CI/publish automation in .github/workflows.
+### Exception: Release Commits
+- `cargo-release` commits are allowed direct pushes to `main`
+- Release tags are created automatically by `cargo-release`
+- Manual releases require maintainer privileges
+
+## ✅ Quality Assurance & Testing
+
+### Local Testing (Before PR)
+```bash
+# Always test locally first
+cargo release patch --dry-run        # Test release process
+cargo test --all                     # Run all tests
+cargo clippy --workspace --all-targets --all-features -- -D warnings
+cargo fmt --check                    # Verify formatting
+cargo doc --no-deps                  # Ensure docs build
+```
+
+### CI Pipeline Testing
+- Test CI without publishing: `cargo release <level> --execute --no-publish`
+- All PRs trigger full CI pipeline
+- Main branch changes trigger release readiness checks
+
+### Integration with Issue Templates
+
+**For Bug Fixes:**
+- Reference bug report issue: `Fixes #123`
+- Include reproduction case from issue template
+- Verify fix addresses all points in bug report
+
+**For Features:**
+- Reference feature request issue: `Implements #456`
+- Ensure implementation matches proposed API design
+- Update documentation with examples from feature request
+
+## 📋 Commit Message Standards
+
+Following our contributing guidelines:
+```
+type: brief description (50 chars max)
+
+Longer description explaining the what and why.
+Reference issues and PRs.
+
+- Specific changes made
+- Fixes #123
+- Implements #456
+```
+
+**Types:** `feat`, `fix`, `docs`, `style`, `refactor`, `test`, `chore`
+
+## 📚 Related Documentation
+
+- **[CONTRIBUTING.md](CONTRIBUTING.md)** - Detailed contributor guidelines
+- **[PR Template](.github/PULL_REQUEST_TEMPLATE.md)** - Required PR format
+- **[Issue Templates](.github/ISSUE_TEMPLATE/)** - Bug reports and feature requests
+- **[README.md](README.md)** - Project overview and roadmap
+
+---
+
+**Note**: This workflow emphasizes quality, type safety, and thorough testing in line with SaDi's mission to provide a reliable, zero-cost dependency injection solution for Rust.
