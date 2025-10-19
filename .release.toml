@@ -5,10 +5,10 @@ push = true
 tag = true
 tag-name = "v{{version}}"
 tag-message = "chore(release): v{{version}}"
-# publish = true
-# allow-branch = ["main", "develop"]
+publish = true
+allow-branch = ["main", "develop"]
 # If you have a workspace and want to release all crates with one command:
-# workspace = true
+workspace = true
 # If you prefer to create / update a changelog:
 changelog = "CHANGELOG.md"
 # changelog-template = "changelog.hbs"
