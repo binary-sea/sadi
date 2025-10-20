@@ -61,6 +61,30 @@ jobs:
     env:
       RUSTDOCFLAGS: "-D rustdoc::all -A rustdoc::private-doc-tests"
 
+  test:
+    name: Run test
+    needs: lint_and_fmt
+    strategy:
+      matrix:
+        os:
+          - ubuntu-latest
+          - macos-latest
+          - windows-latest
+        rust:
+          - stable
+          - beta
+          - nightly
+    runs-on: ${{matrix.os}}
+    steps:
+      - uses: actions/checkout@v5
+      - name: Install ${{ matrix.rust }}
+        uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: ${{ matrix.rust }}
+          override: true
+      - name: Run test on ${{ matrix.os }} OS for ${{ matrix.rust }} toolchain
+        run: cargo test --workspace
+
   cargo-release:
     name: Run cargo-release (bump, tag, publish)
     runs-on: ubuntu-latest
@@ -92,9 +116,9 @@ jobs:
           # If you have a workspace and want to release a specific package, pass --package NAME.
           if [ -n "${{ github.event.inputs.package }}" ]; then
             echo "Releasing package: ${{ github.event.inputs.package }}"
-            cargo release ${{ github.event.inputs.level }} --package "${{ github.event.inputs.package }}" --execute --no-confirm
+            # cargo release ${{ github.event.inputs.level }} --package "${{ github.event.inputs.package }}" --execute --no-confirm
           else
             echo "Releasing root package"
-            cargo release ${{ github.event.inputs.level }} --execute --no-confirm
+            # cargo release ${{ github.event.inputs.level }} --execute --no-confirm
           fi
           
