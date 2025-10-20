@@ -1,4 +1,4 @@
-# .github/workflows/dispatch.yml
+# .github/workflows/CI.yml
 on:
   workflow_dispatch:
     inputs:

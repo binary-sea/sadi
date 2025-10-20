@@ -3,7 +3,7 @@
 [![Crates.io](https://img.shields.io/crates/v/sadi.svg)](https://crates.io/crates/sadi)
 [![Documentation](https://docs.rs/sadi/badge.svg)](https://docs.rs/sadi)
 [![License](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
-[![Build Status](https://github.com/JoaoPedro61/sadi/actions/workflows/dispatch.yml/badge.svg)](https://github.com/JoaoPedro61/sadi/actions/workflows/dispatch.yml)
+[![Build Status](https://github.com/JoaoPedro61/sadi/actions/workflows/CI.yml/badge.svg)](https://github.com/JoaoPedro61/sadi/actions/workflows/CI.yml)
 
 A lightweight, type-safe dependency injection container for Rust applications. SaDi provides both transient and singleton service registration with automatic dependency resolution and circular dependency detection.
 
