@@ -104,11 +104,13 @@
 //! let service = container.get::<ServiceA>(); // Panic!
 //! ```
 
+use crate::injectable::{Injectable, InjectableType};
 use std::{
     any::{Any, TypeId},
     cell::RefCell,
     collections::HashMap,
     fmt,
+    marker::PhantomData,
     rc::Rc,
 };
 
@@ -410,24 +412,54 @@ impl std::error::Error for Error {}
 /// - Using thread-safe service implementations (Arc, Mutex, etc.)
 /// - Wrapping the entire container in appropriate synchronization primitives
 ///
-/// Type alias for factory functions that create transient service instances.
+/// Type alias for factory functions that create injectable service instances.
 ///
 /// A factory function takes a reference to the DI container and returns a boxed
-/// instance of any type. The container uses type erasure to store different
+/// instance of Injectable. The container uses type erasure to store different
 /// factory types in the same collection.
-type FactoryFunction = Box<dyn Fn(&SaDi) -> Box<dyn Any>>;
+type FactoryFunction = Box<dyn Fn(&SaDi) -> Box<dyn Injectable>>;
 
 /// Type alias for singleton cache storage.
 ///
 /// The cache maps TypeId to reference-counted instances wrapped in trait objects.
 /// This allows multiple services to share the same singleton instance safely.
-type SingletonCache = RefCell<HashMap<TypeId, Rc<dyn Any>>>;
+type SingletonCache = RefCell<HashMap<TypeId, Rc<dyn Injectable>>>;
 
 /// Type alias for the resolution stack used in circular dependency detection.
 ///
 /// Each entry contains the TypeId and type name of a service currently being resolved.
 /// This stack helps detect cycles in the dependency graph during service creation.
 type ResolutionStack = RefCell<Vec<(TypeId, &'static str)>>;
+
+/// A builder for registering services with specific trait interfaces.
+pub struct ServiceBuilder<T: ?Sized> {
+    container: SaDi,
+    _phantom: PhantomData<T>,
+}
+
+impl<T: ?Sized + 'static> ServiceBuilder<T> {
+    /// Register a concrete type that implements the trait T
+    pub fn implement<C>(self, factory: impl Fn(&SaDi) -> C + 'static) -> SaDi 
+    where
+        C: Injectable + AsRef<T> + 'static
+    {
+        self.container.factory(move |di| {
+            let instance = factory(di);
+            Box::new(instance) as Box<dyn Injectable>
+        })
+    }
+
+    /// Register a concrete type as a singleton that implements the trait T
+    pub fn implement_singleton<C>(self, factory: impl Fn(&SaDi) -> C + 'static) -> SaDi 
+    where
+        C: Injectable + AsRef<T> + 'static
+    {
+        self.container.factory_singleton(move |di| {
+            let instance = factory(di);
+            Box::new(instance) as Box<dyn Injectable>
+        })
+    }
+}
 
 pub struct SaDi {
     /// Factories for transient services (new instance each time)
@@ -516,7 +548,7 @@ impl SaDi {
     ///
     /// # Type Parameters
     ///
-    /// * `T` - The service type to register (must be `'static + Any`)
+    /// * `T` - The service type to register (must implement `Injectable`)
     /// * `F` - The factory function type
     ///
     /// # Arguments
@@ -527,46 +559,60 @@ impl SaDi {
     ///
     /// Returns `Self` for method chaining.
     ///
-    /// # Panics
-    ///
-    /// Panics if a transient factory for type `T` is already registered.
-    ///
     /// # Examples
     ///
     /// ```rust
     /// use sadi::SaDi;
     /// use std::rc::Rc;
     ///
-    /// struct Logger {
+    /// trait Logger: Injectable {
+    ///     fn log(&self, msg: &str);
+    /// }
+    ///
+    /// struct ConsoleLogger {
     ///     prefix: String,
     /// }
     ///
-    /// struct Config {
-    ///     app_name: String,
+    /// impl Logger for ConsoleLogger {
+    ///     fn log(&self, msg: &str) {
+    ///         println!("{}{}", self.prefix, msg);
+    ///     }
+    /// }
+    ///
+    /// impl AsRef<dyn Logger> for ConsoleLogger {
+    ///     fn as_ref(&self) -> &dyn Logger {
+    ///         self
+    ///     }
     /// }
     ///
     /// let container = SaDi::new()
-    ///     .factory_singleton(|_| Config {
-    ///         app_name: "MyApp".to_string()
-    ///     })
-    ///     .factory(|di| {
-    ///         let config = di.get_singleton::<Config>();
-    ///         Logger {
-    ///             prefix: format!("[{}]", config.app_name)
-    ///         }
+    ///     .register::<dyn Logger>()
+    ///     .implement(|_| ConsoleLogger {
+    ///         prefix: "[INFO] ".to_string()
     ///     });
     ///
-    /// // Each call creates a new Logger instance
-    /// let logger1 = container.get::<Logger>();
-    /// let logger2 = container.get::<Logger>();
+    /// let logger = container.get::<dyn Logger>();
+    /// logger.log("Hello world!");
     /// ```
-    pub fn factory<T, F>(self, factory: F) -> Self
+    pub fn factory<T, F>(mut self, factory: F) -> Self
     where
-        T: 'static + Any,
+        T: InjectableType,
         F: Fn(&SaDi) -> T + 'static,
     {
-        self.try_factory(factory)
-            .unwrap_or_else(|err| panic!("{}", err))
+        let type_id = TypeId::of::<T>();
+        let factory = Box::new(move |di: &SaDi| {
+            Box::new(factory(di)) as Box<dyn Injectable>
+        });
+        self.factories.insert(type_id, factory);
+        self
+    }
+
+    /// Start building a service registration for a trait interface.
+    pub fn register<T: ?Sized + 'static>(self) -> ServiceBuilder<T> {
+        ServiceBuilder {
+            container: self,
+            _phantom: PhantomData,
+        }
     }
 
     /// Try to register a factory for transient service instances.
@@ -642,16 +688,15 @@ impl SaDi {
     /// The service's dependencies are automatically resolved and injected.
     ///
     /// This method panics if no factory is registered for type `T` or if
-    /// circular dependencies are detected. Use [`try_get`](Self::try_get)
-    /// for error handling instead.
+    /// circular dependencies are detected.
     ///
     /// # Type Parameters
     ///
-    /// * `T` - The service type to retrieve (must be `'static + Any`)
+    /// * `T` - The service type to retrieve (must be `Injectable`)
     ///
     /// # Returns
     ///
-    /// A new instance of type `T`.
+    /// A boxed instance implementing type `T`.
     ///
     /// # Panics
     ///
@@ -665,24 +710,54 @@ impl SaDi {
     /// use sadi::SaDi;
     /// use std::cell::Cell;
     ///
-    /// struct MyService {
-    ///     id: u32,
+    /// trait Counter: Injectable {
+    ///     fn increment(&self) -> u32;
+    ///     fn get(&self) -> u32;
     /// }
     ///
-    /// let counter = Cell::new(0);
+    /// struct SimpleCounter {
+    ///     value: Cell<u32>,
+    /// }
+    ///
+    /// impl Counter for SimpleCounter {
+    ///     fn increment(&self) -> u32 {
+    ///         let current = self.value.get();
+    ///         self.value.set(current + 1);
+    ///         current + 1
+    ///     }
+    ///
+    ///     fn get(&self) -> u32 {
+    ///         self.value.get()
+    ///     }
+    /// }
+    ///
+    /// impl AsRef<dyn Counter> for SimpleCounter {
+    ///     fn as_ref(&self) -> &dyn Counter {
+    ///         self
+    ///     }
+    /// }
+    ///
     /// let container = SaDi::new()
-    ///     .factory(move |_| {
-    ///         let current = counter.get();
-    ///         counter.set(current + 1);
-    ///         MyService { id: current + 1 }
+    ///     .register::<dyn Counter>()
+    ///     .implement(|_| SimpleCounter {
+    ///         value: Cell::new(0)
     ///     });
     ///
-    /// let service1 = container.get::<MyService>();
-    /// let service2 = container.get::<MyService>();
-    /// // service1.id != service2.id (different instances)
+    /// let counter = container.get::<dyn Counter>();
+    /// assert_eq!(counter.increment(), 1);
     /// ```
-    pub fn get<T: 'static + Any>(&self) -> T {
-        self.try_get().unwrap_or_else(|err| panic!("{}", err))
+    pub fn get<T: ?Sized + 'static>(&self) -> Box<T>
+    where
+        T: Injectable,
+    {
+        let type_id = TypeId::of::<T>();
+        
+        if let Some(factory) = self.factories.get(&type_id) {
+            let instance = factory(self);
+            instance.into_any().downcast::<T>().unwrap()
+        } else {
+            panic!("No factory registered for type: {}", std::any::type_name::<T>())
+        }
     }
 
     /// Try to get a transient service instance.
@@ -908,13 +983,9 @@ impl SaDi {
     /// for shared ownership. On the first call, the factory function is executed
     /// to create the instance, which is then cached for subsequent calls.
     ///
-    /// This method panics if no singleton factory is registered for type `T` or if
-    /// circular dependencies are detected. Use [`try_get_singleton`](Self::try_get_singleton)
-    /// for error handling instead.
-    ///
     /// # Type Parameters
     ///
-    /// * `T` - The service type to retrieve (must be `'static + Any`)
+    /// * `T` - The service type to retrieve (must be `Injectable`)
     ///
     /// # Returns
     ///
@@ -932,21 +1003,38 @@ impl SaDi {
     /// use sadi::SaDi;
     /// use std::rc::Rc;
     ///
-    /// struct Config {
+    /// trait Config: Injectable {
+    ///     fn get_app_name(&self) -> &str;
+    /// }
+    ///
+    /// struct AppConfig {
     ///     app_name: String,
     /// }
     ///
+    /// impl Config for AppConfig {
+    ///     fn get_app_name(&self) -> &str {
+    ///         &self.app_name
+    ///     }
+    /// }
+    ///
+    /// impl AsRef<dyn Config> for AppConfig {
+    ///     fn as_ref(&self) -> &dyn Config {
+    ///         self
+    ///     }
+    /// }
+    ///
     /// let container = SaDi::new()
-    ///     .factory_singleton(|_| Config {
+    ///     .register::<dyn Config>()
+    ///     .implement_singleton(|_| AppConfig {
     ///         app_name: "MyApp".to_string()
     ///     });
     ///
-    /// let config1 = container.get_singleton::<Config>();
-    /// let config2 = container.get_singleton::<Config>();
+    /// let config1 = container.get_singleton::<dyn Config>();
+    /// let config2 = container.get_singleton::<dyn Config>();
     ///
     /// // Same instance
     /// assert_eq!(Rc::as_ptr(&config1), Rc::as_ptr(&config2));
-    /// assert_eq!(config1.app_name, "MyApp");
+    /// assert_eq!(config1.get_app_name(), "MyApp");
     /// ```
     pub fn get_singleton<T: 'static + Any>(&self) -> Rc<T> {
         self.try_get_singleton()
