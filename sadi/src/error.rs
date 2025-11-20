@@ -227,3 +227,54 @@ impl fmt::Display for Error {
 }
 
 impl std::error::Error for Error {}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn service_not_registered_error() {
+        let err = Error::service_not_registered("MyType", "singleton");
+        assert_eq!(err.kind, ErrorKind::ServiceNotRegistered);
+        assert!(err.message.contains("MyType"));
+        assert!(err.message.contains("singleton"));
+    }
+
+    #[test]
+    fn type_mismatch_error() {
+        let err = Error::type_mismatch("OtherType");
+        assert_eq!(err.kind, ErrorKind::TypeMismatch);
+        assert!(err.message.contains("OtherType"));
+    }
+
+    #[test]
+    fn cached_type_mismatch_error() {
+        let err = Error::cached_type_mismatch("CachedType");
+        assert_eq!(err.kind, ErrorKind::CachedTypeMismatch);
+        assert!(err.message.contains("CachedType"));
+    }
+
+    #[test]
+    fn factory_already_registered_error() {
+        let err = Error::factory_already_registered("Foo", "transient");
+        assert_eq!(err.kind, ErrorKind::FactoryAlreadyRegistered);
+        assert!(err.message.contains("Foo"));
+        assert!(err.message.contains("transient"));
+    }
+
+    #[test]
+    fn circular_dependency_error() {
+        let chain = ["A", "B", "A"];
+        let err = Error::circular_dependency(&chain);
+        assert_eq!(err.kind, ErrorKind::CircularDependency);
+        assert!(err.message.contains("A -> B -> A"));
+    }
+
+    #[test]
+    fn display_trait() {
+        let err = Error::service_not_registered("X", "transient");
+        let s = format!("{}", err);
+        assert!(s.contains("ServiceNotRegistered"));
+        assert!(s.contains("X"));
+    }
+}
