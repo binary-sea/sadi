@@ -193,6 +193,12 @@ pub struct Container {
     factories: FactoriesMap,
 }
 
+impl Default for Container {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 //
 // ──────────────────────────────────────────────────────────────────────────────
 //   THREAD SAFE IMPLEMENTATION (feature = "thread-safe")

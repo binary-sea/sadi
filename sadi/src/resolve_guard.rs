@@ -24,7 +24,7 @@ use crate::Error;
 thread_local! {
     // Stack of type names being resolved in this thread.
     // Using String so we can build and report the chain.
-    static RESOLVE_STACK: RefCell<Vec<String>> = RefCell::new(Vec::new());
+    static RESOLVE_STACK: RefCell<Vec<String>> = const { RefCell::new(Vec::new()) };
 }
 
 /// Guard that pops the last pushed type name from the thread-local stack on drop.
