@@ -12,7 +12,10 @@ license-file.workspace = true
 authors.workspace = true
 
 [dependencies]
-tracing = { version = "0.1", optional = true }
+tracing = { version = "0.1.41", optional = true }
 
 [features]
+default = ["thread-safe", "tracing"]
+
+thread-safe = []
 tracing = ["dep:tracing"]
