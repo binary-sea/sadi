@@ -1,3 +1,163 @@
+//! # Dependency Injection Container
+//!
+//! This module provides a minimal, flexible, feature-flag-driven
+//! Dependency Injection (DI) and Inversion of Control (IoC) system for Rust.
+//!
+//! It is designed to be:
+//!
+//! - **Ergonomic** — Zero boilerplate usage.
+//! - **Flexible** — Works with traits, structs, lambdas, factories, singletons.
+//! - **Safe** — Detects circular dependencies at runtime.
+//! - **Configurable** — Can run in:
+//!   - **Thread-safe mode (`feature = "thread-safe"`)** using `Arc` + `RwLock`
+//!   - **Non-thread-safe mode** using `Rc` + `RefCell`
+//!
+//! ## Core Concepts
+//!
+//! - **Binding**  
+//!   You register a provider function (factory) that knows how to build a type.
+//!
+//! - **Resolving**  
+//!   You request an instance of a type, and the container builds (or retrieves)
+//!   it for you.
+//!
+//! - **Singletons**  
+//!   A singleton is created once and cached.
+//!
+//! - **Transient bindings**  
+//!   A new instance is created every time.
+//!
+//! - **Shared pointers**  
+//!   Depending on the feature set, the container transparently uses
+//!   `Arc<T>` or `Rc<T>`.
+//!
+//! ## When to Use This Library?
+//!
+//! - Building servers using **Axum**, **Actix**, **Rocket**, etc.
+//! - Creating modular business layers following **DDD**.
+//! - Managing plugin-based architectures.
+//! - Replacing complex dependency graphs with clean, minimal DI code.
+//!
+//! ## Basic Example
+//!
+//! ```rust
+//! use mycrate::Container;
+//!
+//! struct Service {
+//!     pub value: i32,
+//! }
+//!
+//! let c = Container::new();
+//!
+//! c.bind_concrete::<Service, Service, _>(|_| Service { value: 10 }).unwrap();
+//!
+//! let s = c.resolve::<Service>().unwrap();
+//! assert_eq!(s.value, 10);
+//! ```
+//!
+//! ## Trait Binding Example
+//!
+//! ```rust
+//! trait Repo {
+//!     fn n(&self) -> i32;
+//! }
+//!
+//! struct RepoImpl;
+//! impl Repo for RepoImpl {
+//!     fn n(&self) -> i32 { 42 }
+//! }
+//!
+//! let c = Container::new();
+//!
+//! c.bind_abstract::<dyn Repo, _, _>(|_| RepoImpl).unwrap();
+//!
+//! let repo = c.resolve::<dyn Repo>().unwrap();
+//! assert_eq!(repo.n(), 42);
+//! ```
+//!
+//! ## Singleton Example
+//!
+//! ```rust
+//! use std::sync::Mutex;
+//!
+//! struct Counter(Mutex<i32>);
+//!
+//! let c = Container::new();
+//!
+//! c.bind_concrete_singleton::<Counter, Counter, _>(|_| Counter(Mutex::new(0))).unwrap();
+//!
+//! let a = c.resolve::<Counter>().unwrap();
+//! *a.0.lock().unwrap() = 99;
+//!
+//! let b = c.resolve::<Counter>().unwrap();
+//! assert_eq!(*b.0.lock().unwrap(), 99);
+//! ```
+//!
+//! ## Complex Example: Service Graph
+//!
+//! ```rust
+//! trait Logger {
+//!     fn log(&self, msg: &str);
+//! }
+//!
+//! struct ConsoleLogger;
+//! impl Logger for ConsoleLogger {
+//!     fn log(&self, msg: &str) { println!("LOG: {}", msg); }
+//! }
+//!
+//! struct UserRepository {
+//!     logger: std::sync::Arc<dyn Logger>,
+//! }
+//! impl UserRepository {
+//!     fn new(logger: std::sync::Arc<dyn Logger>) -> Self { Self { logger } }
+//! }
+//!
+//! struct UserService {
+//!     repo: std::sync::Arc<UserRepository>,
+//! }
+//! impl UserService {
+//!     fn new(repo: std::sync::Arc<UserRepository>) -> Self { Self { repo } }
+//! }
+//!
+//! let c = Container::new();
+//!
+//! c.bind_abstract::<dyn Logger, _, _>(|_| ConsoleLogger).unwrap();
+//!
+//! c.bind_concrete::<UserRepository, UserRepository, _>(|c| {
+//!     let logger = c.resolve::<dyn Logger>().unwrap();
+//!     UserRepository::new(logger)
+//! }).unwrap();
+//!
+//! c.bind_concrete::<UserService, UserService, _>(|c| {
+//!     let repo = c.resolve::<UserRepository>().unwrap();
+//!     UserService::new(repo)
+//! }).unwrap();
+//!
+//! let svc = c.resolve::<UserService>().unwrap();
+//! svc.repo.logger.log("User loaded");
+//! ```
+//!
+//! ## Circular Dependency Detection
+//!
+//! ```rust
+//! struct A;
+//! struct B;
+//!
+//! let c = Container::new();
+//!
+//! c.bind_concrete::<A, A, _>(|c| {
+//!     let _ = c.resolve::<B>().unwrap();
+//!     A
+//! }).unwrap();
+//!
+//! c.bind_concrete::<B, B, _>(|c| {
+//!     let _ = c.resolve::<A>().unwrap();
+//!     B
+//! }).unwrap();
+//!
+//! let err = c.resolve::<A>().unwrap_err();
+//! assert!(err.is_circular_dependency());
+//! ```
 
 use std::any::TypeId;
 use std::collections::HashMap;
@@ -12,18 +172,39 @@ use std::rc::Rc;
 
 use crate::{Error, FactoriesMap, Factory, IntoShared, Provider, Shared};
 
+/// The IoC/DI container.
+///
+/// Stores provider functions (`Factory<T>`) indexed by `TypeId`,
+/// and builds values on demand using dependency resolution.
 pub struct Container {
     factories: FactoriesMap,
 }
 
+//
+// ──────────────────────────────────────────────────────────────────────────────
+//   THREAD SAFE IMPLEMENTATION (feature = "thread-safe")
+// ──────────────────────────────────────────────────────────────────────────────
+//
+
 #[cfg(feature = "thread-safe")]
 impl Container {
+
+    /// Creates a new thread-safe container backed by `RwLock<HashMap>`.
+    ///
+    /// # Example
+    /// ```
+    /// let c = Container::new();
+    /// assert!(!c.has::<i32>());
+    /// ```
     pub fn new() -> Self {
         Self {
             factories: RwLock::new(HashMap::new()),
         }
     }
 
+    /// Registers an **abstract binding** for trait objects or unsized types.
+    ///
+    /// Instances are **not cached** (transient).
     pub fn bind_abstract<T, R, F>(&self, provider: F) -> Result<(), Error>
     where
         T: ?Sized + 'static + Send + Sync,
@@ -31,14 +212,12 @@ impl Container {
         F: Fn(&Container) -> R + Send + Sync + 'static,
     {
         self.bind_internal(
-            Box::new(move |c: &Container| {
-                let r = provider(c);
-                r.into_shared()
-            }),
+            Box::new(move |c| provider(c).into_shared()),
             false,
         )
     }
 
+    /// Registers a **singleton** abstract binding.
     pub fn bind_abstract_singleton<T, R, F>(&self, provider: F) -> Result<(), Error>
     where
         T: ?Sized + 'static + Send + Sync,
@@ -46,223 +225,245 @@ impl Container {
         F: Fn(&Container) -> R + Send + Sync + 'static,
     {
         self.bind_internal(
-            Box::new(move |c: &Container| {
-                let r = provider(c);
-                r.into_shared()
-            }),
+            Box::new(move |c| provider(c).into_shared()),
             true,
         )
     }
 
+    /// Registers a concrete implementation automatically wrapped in `Arc`.
     pub fn bind_concrete<T, U, F>(&self, provider: F) -> Result<(), Error>
     where
-        T: 'static + Sized + Send + Sync,
+        T: 'static + Send + Sync,
         U: 'static,
         F: Fn(&Container) -> U + Send + Sync + 'static,
         Arc<U>: Into<Arc<T>>,
     {
-        self.bind_abstract::<T, _, _>(move |c: &Container| {
-            let u = provider(c);
-            Arc::new(u).into()
-        })
+        self.bind_abstract::<T, _, _>(move |c| Arc::new(provider(c)).into())
     }
 
+    /// Singleton version of [`bind_concrete`].
     pub fn bind_concrete_singleton<T, U, F>(&self, provider: F) -> Result<(), Error>
     where
-        T: 'static + Sized + Send + Sync,
+        T: 'static + Send + Sync,
         U: 'static,
         F: Fn(&Container) -> U + Send + Sync + 'static,
         Arc<U>: Into<Arc<T>>,
     {
-        self.bind_abstract_singleton::<T, _, _>(move |c: &Container| {
-            let u = provider(c);
-            Arc::new(u).into()
-        })
+        self.bind_abstract_singleton::<T, _, _>(move |c| Arc::new(provider(c)).into())
     }
 
+    /// Registers an already created instance as a singleton.
     pub fn bind_instance<T, R>(&self, instance: R) -> Result<(), Error>
     where
-        T: ?Sized + 'static + Send + Sync,
+        T: ?Sized + Send + Sync + 'static,
         R: IntoShared<T> + 'static,
     {
-        let shared_instance: Shared<T> = instance.into_shared();
+        let shared = instance.into_shared();
+
         self.bind_internal(
-            Box::new(move |_c: &Container| shared_instance.clone()),
+            Box::new(move |_| shared.clone()),
             true,
         )
     }
 
-    fn bind_internal<T>(&self, provider: Provider<T>, singleton: bool) -> Result<(), Error>
+    /// Internal binding logic shared by all binding methods.
+    fn bind_internal<T>(&self, provider: Provider<T>, singleton: bool)
+        -> Result<(), Error>
     where
-        T: ?Sized + 'static + Send + Sync,
+        T: ?Sized + Send + Sync + 'static,
     {
-        let type_id = TypeId::of::<T>();
-        let type_name = std::any::type_name::<T>();
+        let id = TypeId::of::<T>();
+        let name = std::any::type_name::<T>();
+
         let mut map = self.factories.write().unwrap();
 
-        if map.contains_key(&type_id) {
-            return Err(Error::factory_already_registered(type_name, "factory"));
+        if map.contains_key(&id) {
+            return Err(Error::factory_already_registered(name, "factory"));
         }
-        let factory: Factory<T> = Factory::new(provider, singleton);
-        let boxed: Box<dyn std::any::Any + Send + Sync> = Box::new(factory);
-        map.insert(type_id, boxed);
+
+        let factory = Factory::new(provider, singleton);
+
+        map.insert(id, Box::new(factory));
+
         Ok(())
     }
 
+    /// Resolves a previously registered binding.
+    ///
+    /// Performs:
+    /// - Type lookup  
+    /// - Circular dependency detection  
+    /// - Singleton caching  
+    /// - Provider invocation  
     pub fn resolve<T>(&self) -> Result<Shared<T>, Error>
     where
-        T: ?Sized + 'static + Send + Sync,
+        T: ?Sized + Send + Sync + 'static,
     {
-        let type_id = TypeId::of::<T>();
-        let type_name = std::any::type_name::<T>();
+        let id = TypeId::of::<T>();
+        let name = std::any::type_name::<T>();
 
-        let _guard = crate::ResolveGuard::push(type_name)?;
+        let _guard = crate::ResolveGuard::push(name)?;
 
         let map = self.factories.read().unwrap();
-        let boxed = match map.get(&type_id) {
-            Some(b) => b,
-            None => return Err(Error::service_not_registered(type_name, "factory")),
-        };
+        let boxed = map.get(&id)
+            .ok_or_else(|| Error::service_not_registered(name, "factory"))?;
+
         let factory = boxed
             .downcast_ref::<Factory<T>>()
-            .ok_or_else(|| Error::type_mismatch(type_name))?;
+            .ok_or_else(|| Error::type_mismatch(name))?;
 
         Ok(factory.provide(self))
     }
 
+    /// Returns `true` if a type has been registered.
     pub fn has<T>(&self) -> bool
     where
-        T: ?Sized + 'static + Send + Sync,
+        T: ?Sized + Send + Sync + 'static,
     {
-        let type_id = TypeId::of::<T>();
-        let map = self.factories.read().unwrap();
-        map.contains_key(&type_id)
+        let id = TypeId::of::<T>();
+        self.factories.read().unwrap().contains_key(&id)
     }
 }
 
+//
+// ──────────────────────────────────────────────────────────────────────────────
+//   NON THREAD SAFE IMPLEMENTATION (default)
+// ──────────────────────────────────────────────────────────────────────────────
+//
+
 #[cfg(not(feature = "thread-safe"))]
 impl Container {
+
+    /// Creates a new non-thread-safe container backed by `RefCell<HashMap>`.
+    ///
+    /// # Example
+    /// ```
+    /// let c = Container::new();
+    /// assert!(!c.has::<i32>());
+    /// ```
     pub fn new() -> Self {
         Self {
             factories: RefCell::new(HashMap::new()),
         }
     }
 
+    /// Registers an **abstract binding** for trait objects or unsized types.
+    ///
+    /// Instances are **not cached** (transient).
     pub fn bind_abstract<T, R, F>(&self, provider: F) -> Result<(), Error>
     where
         T: ?Sized + 'static,
         R: IntoShared<T> + 'static,
         F: Fn(&Container) -> R + 'static,
     {
-        self.bind_internal(
-            Box::new(move |c: &Container| {
-                let r = provider(c);
-                r.into_shared()
-            }),
-            false,
-        )
+        self.bind_internal(Box::new(move |c| provider(c).into_shared()), false)
     }
 
+    /// Registers a **singleton** abstract binding.
     pub fn bind_abstract_singleton<T, R, F>(&self, provider: F) -> Result<(), Error>
     where
         T: ?Sized + 'static,
         R: IntoShared<T> + 'static,
         F: Fn(&Container) -> R + 'static,
     {
-        self.bind_internal(
-            Box::new(move |c: &Container| {
-                let r = provider(c);
-                r.into_shared()
-            }),
-            true,
-        )
+        self.bind_internal(Box::new(move |c| provider(c).into_shared()), true)
     }
 
+    /// Registers a concrete implementation automatically wrapped in `Rc`.
     pub fn bind_concrete<T, U, F>(&self, provider: F) -> Result<(), Error>
     where
-        T: 'static + Sized,
+        T: 'static,
         U: 'static,
         F: Fn(&Container) -> U + 'static,
         Rc<U>: Into<Rc<T>>,
     {
-        self.bind_abstract::<T, _, _>(move |c: &Container| {
-            let u = provider(c);
-            Rc::new(u).into()
-        })
+        self.bind_abstract::<T, _, _>(move |c| Rc::new(provider(c)).into())
     }
 
+    /// Singleton version of [`bind_concrete`].
     pub fn bind_concrete_singleton<T, U, F>(&self, provider: F) -> Result<(), Error>
     where
-        T: 'static + Sized,
+        T: 'static,
         U: 'static,
         F: Fn(&Container) -> U + 'static,
         Rc<U>: Into<Rc<T>>,
     {
-        self.bind_abstract_singleton::<T, _, _>(move |c: &Container| {
-            let u = provider(c);
-            Rc::new(u).into()
-        })
+        self.bind_abstract_singleton::<T, _, _>(move |c| Rc::new(provider(c)).into())
     }
 
+    /// Registers an already created instance as a singleton.
     pub fn bind_instance<T, R>(&self, instance: R) -> Result<(), Error>
     where
         T: ?Sized + 'static,
         R: IntoShared<T> + 'static,
     {
-        let shared_instance: Shared<T> = instance.into_shared();
-        self.bind_internal(
-            Box::new(move |_c: &Container| shared_instance.clone()),
-            true,
-        )
+        let shared = instance.into_shared();
+
+        self.bind_internal(Box::new(move |_| shared.clone()), true)
     }
 
-    fn bind_internal<T>(&self, provider: Provider<T>, singleton: bool) -> Result<(), Error>
+    /// Internal binding logic shared by all binding methods.
+    fn bind_internal<T>(&self, provider: Provider<T>, singleton: bool)
+        -> Result<(), Error>
     where
         T: ?Sized + 'static,
     {
-        let type_id = TypeId::of::<T>();
-        let type_name = std::any::type_name::<T>();
+        let id = TypeId::of::<T>();
+        let name = std::any::type_name::<T>();
+
         let mut map = self.factories.borrow_mut();
 
-        if map.contains_key(&type_id) {
-            return Err(Error::factory_already_registered(type_name, "factory"));
+        if map.contains_key(&id) {
+            return Err(Error::factory_already_registered(name, "factory"));
         }
-        let factory: Factory<T> = Factory::new(provider, singleton);
-        let boxed: Box<dyn std::any::Any> = Box::new(factory);
-        map.insert(type_id, boxed);
+
+        map.insert(id, Box::new(Factory::new(provider, singleton)));
+
         Ok(())
     }
 
+    /// Resolves a previously registered binding.
+    ///
+    /// Performs:
+    /// - Type lookup  
+    /// - Circular dependency detection  
+    /// - Singleton caching  
+    /// - Provider invocation  
     pub fn resolve<T>(&self) -> Result<Shared<T>, Error>
     where
         T: ?Sized + 'static,
     {
-        let type_id = TypeId::of::<T>();
-        let type_name = std::any::type_name::<T>();
+        let id = TypeId::of::<T>();
+        let name = std::any::type_name::<T>();
 
-        let _guard = crate::ResolveGuard::push(type_name)?;
+        let _guard = crate::ResolveGuard::push(name)?;
 
         let map = self.factories.borrow();
-        let boxed = match map.get(&type_id) {
-            Some(b) => b,
-            None => return Err(Error::service_not_registered(type_name, "factory")),
-        };
+        let boxed = map.get(&id)
+            .ok_or_else(|| Error::service_not_registered(name, "factory"))?;
+
         let factory = boxed
             .downcast_ref::<Factory<T>>()
-            .ok_or_else(|| Error::type_mismatch(type_name))?;
+            .ok_or_else(|| Error::type_mismatch(name))?;
 
         Ok(factory.provide(self))
     }
 
+    /// Returns whether type `T` has a registered factory.
     pub fn has<T>(&self) -> bool
     where
         T: ?Sized + 'static,
     {
-        let type_id = TypeId::of::<T>();
-        let map = self.factories.borrow();
-        map.contains_key(&type_id)
+        let id = TypeId::of::<T>();
+        self.factories.borrow().contains_key(&id)
     }
 }
+
+//
+// ──────────────────────────────────────────────────────────────────────────────
+//   TESTS
+// ──────────────────────────────────────────────────────────────────────────────
+//
 
 #[cfg(test)]
 mod tests {
