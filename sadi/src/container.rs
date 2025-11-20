@@ -1,14 +1,3 @@
-//! Dependency injection Container (thread-safe and non-thread-safe variants).
-//!
-//! Public API:
-//! - bind_abstract / bind_abstract_singleton: register providers that return Shared-compatible values (Arc/Rc) for abstract tokens (e.g. dyn Trait)
-//! - bind_concrete / bind_concrete_singleton: convenience to register providers that return concrete U for concrete token T
-//! - bind_instance: register an already-created Shared<T> instance as singleton
-//! - resolve / has: resolve a registered token or check presence
-//!
-//! This crate avoids attempting complex generic coercions inside the container; when registering
-//! trait-object tokens the provider should return a Shared (Arc/Rc) or use the concrete-token
-//! helpers for sized tokens. The API is intentionally explicit and simple.
 
 use std::any::TypeId;
 use std::collections::HashMap;
@@ -23,26 +12,18 @@ use std::rc::Rc;
 
 use crate::{Error, FactoriesMap, Factory, IntoShared, Provider, Shared};
 
-/// The DI container.
 pub struct Container {
     factories: FactoriesMap,
 }
 
-//////////////////////////////////////////////////////////////////////////////
-// THREAD-SAFE implementation using Arc + RwLock
-//////////////////////////////////////////////////////////////////////////////
 #[cfg(feature = "thread-safe")]
 impl Container {
-    /// Create a new container (thread-safe).
     pub fn new() -> Self {
         Self {
             factories: RwLock::new(HashMap::new()),
         }
     }
 
-    /// Register a provider that returns a Shared<T>-compatible value (e.g. Arc<U>).
-    /// This is the abstract-token variant: use when the token T may be unsized (e.g. dyn Trait).
-    /// Providers must be Send + Sync in thread-safe mode.
     pub fn bind_abstract<T, R, F>(&self, provider: F) -> Result<(), Error>
     where
         T: ?Sized + 'static + Send + Sync,
@@ -58,7 +39,6 @@ impl Container {
         )
     }
 
-    /// Register a singleton provider (the instance will be cached) for abstract token T.
     pub fn bind_abstract_singleton<T, R, F>(&self, provider: F) -> Result<(), Error>
     where
         T: ?Sized + 'static + Send + Sync,
@@ -74,10 +54,6 @@ impl Container {
         )
     }
 
-    /// Register a provider that returns a concrete value `U` for a *concrete token* `T`.
-    /// Use when the token is sized (concrete) and the provider returns a plain value `U`.
-    /// The container will wrap it with `Arc::new(u)` and then call `into()` to convert to Arc<T>.
-    /// The bound `Arc<U>: Into<Arc<T>>` ensures this conversion is possible (usually T == U).
     pub fn bind_concrete<T, U, F>(&self, provider: F) -> Result<(), Error>
     where
         T: 'static + Sized + Send + Sync,
@@ -91,7 +67,6 @@ impl Container {
         })
     }
 
-    /// Singleton variant for concrete-token providers.
     pub fn bind_concrete_singleton<T, U, F>(&self, provider: F) -> Result<(), Error>
     where
         T: 'static + Sized + Send + Sync,
@@ -105,7 +80,6 @@ impl Container {
         })
     }
 
-    /// Register an already-created instance as singleton. The `instance` must be IntoShared<T>.
     pub fn bind_instance<T, R>(&self, instance: R) -> Result<(), Error>
     where
         T: ?Sized + 'static + Send + Sync,
@@ -118,7 +92,6 @@ impl Container {
         )
     }
 
-    /// Internal helper to register provider Factory<T>.
     fn bind_internal<T>(&self, provider: Provider<T>, singleton: bool) -> Result<(), Error>
     where
         T: ?Sized + 'static + Send + Sync,
@@ -136,7 +109,6 @@ impl Container {
         Ok(())
     }
 
-    /// Resolve a registered token T, returning Shared<T>.
     pub fn resolve<T>(&self) -> Result<Shared<T>, Error>
     where
         T: ?Sized + 'static + Send + Sync,
@@ -144,7 +116,6 @@ impl Container {
         let type_id = TypeId::of::<T>();
         let type_name = std::any::type_name::<T>();
 
-        // Push resolve guard to detect circular dependencies. The guard pops on Drop.
         let _guard = crate::ResolveGuard::push(type_name)?;
 
         let map = self.factories.read().unwrap();
@@ -159,7 +130,6 @@ impl Container {
         Ok(factory.provide(self))
     }
 
-    /// Check if a provider exists for token T.
     pub fn has<T>(&self) -> bool
     where
         T: ?Sized + 'static + Send + Sync,
@@ -170,19 +140,14 @@ impl Container {
     }
 }
 
-//////////////////////////////////////////////////////////////////////////////
-// NON-THREAD-SAFE implementation using Rc + RefCell
-//////////////////////////////////////////////////////////////////////////////
 #[cfg(not(feature = "thread-safe"))]
 impl Container {
-    /// Create a new container (non-thread-safe).
     pub fn new() -> Self {
         Self {
             factories: RefCell::new(HashMap::new()),
         }
     }
 
-    /// Register a provider that returns a Shared<T>-compatible value (e.g. Rc<U>).
     pub fn bind_abstract<T, R, F>(&self, provider: F) -> Result<(), Error>
     where
         T: ?Sized + 'static,
@@ -198,7 +163,6 @@ impl Container {
         )
     }
 
-    /// Register a singleton provider (the instance will be cached) for abstract token T.
     pub fn bind_abstract_singleton<T, R, F>(&self, provider: F) -> Result<(), Error>
     where
         T: ?Sized + 'static,
@@ -214,7 +178,6 @@ impl Container {
         )
     }
 
-    /// Register a provider that returns a concrete value `U` for a *concrete token* `T`.
     pub fn bind_concrete<T, U, F>(&self, provider: F) -> Result<(), Error>
     where
         T: 'static + Sized,
@@ -228,7 +191,6 @@ impl Container {
         })
     }
 
-    /// Singleton variant for concrete-token providers (non-thread-safe).
     pub fn bind_concrete_singleton<T, U, F>(&self, provider: F) -> Result<(), Error>
     where
         T: 'static + Sized,
@@ -242,7 +204,6 @@ impl Container {
         })
     }
 
-    /// Register an already-created instance as singleton.
     pub fn bind_instance<T, R>(&self, instance: R) -> Result<(), Error>
     where
         T: ?Sized + 'static,
@@ -255,7 +216,6 @@ impl Container {
         )
     }
 
-    /// Internal helper to register provider Factory<T>.
     fn bind_internal<T>(&self, provider: Provider<T>, singleton: bool) -> Result<(), Error>
     where
         T: ?Sized + 'static,
@@ -273,7 +233,6 @@ impl Container {
         Ok(())
     }
 
-    /// Resolve a registered token T, returning Shared<T>.
     pub fn resolve<T>(&self) -> Result<Shared<T>, Error>
     where
         T: ?Sized + 'static,
@@ -281,7 +240,6 @@ impl Container {
         let type_id = TypeId::of::<T>();
         let type_name = std::any::type_name::<T>();
 
-        // Push resolve guard to detect circular dependencies. The guard pops on Drop.
         let _guard = crate::ResolveGuard::push(type_name)?;
 
         let map = self.factories.borrow();
@@ -296,7 +254,6 @@ impl Container {
         Ok(factory.provide(self))
     }
 
-    /// Check if a provider exists for token T.
     pub fn has<T>(&self) -> bool
     where
         T: ?Sized + 'static,
@@ -311,13 +268,11 @@ impl Container {
 mod tests {
     use super::*;
 
-    // Simple concrete type for testing
     struct S(pub i32);
 
     #[test]
     fn bind_and_resolve_concrete() {
         let c = Container::new();
-        // Register a transient concrete provider that returns S(7)
         c.bind_concrete::<S, S, _>(|_c| S(7)).unwrap();
         let s = c.resolve::<S>().unwrap();
         assert_eq!((*s).0, 7);
@@ -326,14 +281,12 @@ mod tests {
     #[test]
     fn bind_instance_and_singleton_behavior() {
         let c = Container::new();
-        // Register an already-created instance as singleton
         let instance = Shared::new(S(5));
         c.bind_instance::<S, _>(instance).unwrap();
         assert!(c.has::<S>());
 
         let a = c.resolve::<S>().unwrap();
         let b = c.resolve::<S>().unwrap();
-        // Both resolves should point to the same shared instance
         let pa = (&*a) as *const S;
         let pb = (&*b) as *const S;
         assert_eq!(pa, pb);
@@ -341,7 +294,6 @@ mod tests {
 
     #[test]
     fn resolve_guard_detects_cycle() {
-        // Directly exercise ResolveGuard for circular detection
         let _g1 = crate::ResolveGuard::push("A").unwrap();
         let _g2 = crate::ResolveGuard::push("B").unwrap();
         let err = crate::ResolveGuard::push("A").unwrap_err();
