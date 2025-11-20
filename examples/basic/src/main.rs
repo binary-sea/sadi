@@ -1,5 +1,4 @@
-use sadi::{Error, SaDi};
-use std::rc::Rc;
+use sadi::{Container, Error, Shared, bind, container};
 
 // Example services to demonstrate dependency injection
 
@@ -37,7 +36,7 @@ struct DatabaseService {
 }
 
 impl DatabaseService {
-    fn new(config: Rc<ConfigService>) -> Self {
+    fn new(config: Shared<ConfigService>) -> Self {
         println!("🗄️  Connecting to database...");
         Self {
             connection_string: format!(
@@ -60,12 +59,12 @@ impl DatabaseService {
 /// A logger service (transient) - new instance per injection
 #[derive(Debug)]
 struct LoggerService {
-    db: Rc<DatabaseService>,
-    config: Rc<ConfigService>,
+    db: Shared<DatabaseService>,
+    config: Shared<ConfigService>,
 }
 
 impl LoggerService {
-    fn new(db: Rc<DatabaseService>, config: Rc<ConfigService>) -> Self {
+    fn new(db: Shared<DatabaseService>, config: Shared<ConfigService>) -> Self {
         println!("📝 Creating LoggerService instance");
         Self { db, config }
     }
@@ -89,12 +88,12 @@ impl LoggerService {
 /// A user service (transient) - business logic layer
 #[derive(Debug)]
 struct UserService {
-    db: Rc<DatabaseService>,
-    logger: LoggerService,
+    db: Shared<DatabaseService>,
+    logger: Shared<LoggerService>,
 }
 
 impl UserService {
-    fn new(db: Rc<DatabaseService>, logger: LoggerService) -> Self {
+    fn new(db: Shared<DatabaseService>, logger: Shared<LoggerService>) -> Self {
         println!("👤 Creating UserService instance");
         Self { db, logger }
     }
@@ -132,12 +131,12 @@ impl UserService {
 /// An email service (transient) - external service integration
 #[derive(Debug)]
 struct EmailService {
-    config: Rc<ConfigService>,
-    logger: LoggerService,
+    config: Shared<ConfigService>,
+    logger: Shared<LoggerService>,
 }
 
 impl EmailService {
-    fn new(config: Rc<ConfigService>, logger: LoggerService) -> Self {
+    fn new(config: Shared<ConfigService>, logger: Shared<LoggerService>) -> Self {
         println!("📧 Creating EmailService instance");
         Self { config, logger }
     }
@@ -176,16 +175,16 @@ impl EmailService {
 /// Application service (transient) - orchestrates other services
 #[derive(Debug)]
 struct ApplicationService {
-    user_service: UserService,
-    email_service: EmailService,
-    config: Rc<ConfigService>,
+    user_service: Shared<UserService>,
+    email_service: Shared<EmailService>,
+    config: Shared<ConfigService>,
 }
 
 impl ApplicationService {
     fn new(
-        user_service: UserService,
-        email_service: EmailService,
-        config: Rc<ConfigService>,
+        user_service: Shared<UserService>,
+        email_service: Shared<EmailService>,
+        config: Shared<ConfigService>,
     ) -> Self {
         println!("🚀 Creating ApplicationService instance");
         Self {
@@ -224,54 +223,29 @@ fn main() -> Result<(), Error> {
     // Create and configure the DI container
     println!("📦 Setting up dependency injection container...");
 
-    let container = SaDi::new()
-        // Register singleton services (expensive to create, shared state)
-        .factory_singleton(|_| ConfigService::new())
-        .factory_singleton(|di: &SaDi| DatabaseService::new(di.get_singleton::<ConfigService>()))
-        // Register transient services (created fresh each time)
-        .factory(|di: &SaDi| {
-            LoggerService::new(
-                di.get_singleton::<DatabaseService>(),
-                di.get_singleton::<ConfigService>(),
-            )
-        })
-        .factory(|di: &SaDi| {
-            UserService::new(
-                di.get_singleton::<DatabaseService>(),
-                di.get::<LoggerService>(),
-            )
-        })
-        .factory(|di: &SaDi| {
-            EmailService::new(
-                di.get_singleton::<ConfigService>(),
-                di.get::<LoggerService>(),
-            )
-        })
-        .factory(|di: &SaDi| {
-            ApplicationService::new(
-                di.get::<UserService>(),
-                di.get::<EmailService>(),
-                di.get_singleton::<ConfigService>(),
-            )
-        });
+    let container = container! {
+        bind(singleton ConfigService => |_| ConfigService::new())
+        bind(singleton DatabaseService => |c| DatabaseService::new(c.resolve::<ConfigService>().unwrap()))
+        bind(LoggerService => |c| LoggerService::new(c.resolve::<DatabaseService>().unwrap(), c.resolve::<ConfigService>().unwrap()))
+        bind(UserService => |c| UserService::new(c.resolve::<DatabaseService>().unwrap(), c.resolve::<LoggerService>().unwrap()))
+        bind(EmailService => |c| EmailService::new(c.resolve::<ConfigService>().unwrap(), c.resolve::<LoggerService>().unwrap()))
+        bind(ApplicationService => |c| ApplicationService::new(c.resolve::<UserService>().unwrap(), c.resolve::<EmailService>().unwrap(), c.resolve::<ConfigService>().unwrap()))
+    };
 
     println!("✅ Container configured successfully!\n");
 
     // Demonstrate singleton behavior
     println!("--- Singleton Behavior ---");
-    let config1 = container.get_singleton::<ConfigService>();
-    let config2 = container.get_singleton::<ConfigService>();
+    let config1 = container.resolve::<ConfigService>().unwrap();
+    let config2 = container.resolve::<ConfigService>().unwrap();
 
     println!("📋 Config1: {}", config1.get_info());
     println!("📋 Config2: {}", config2.get_info());
-    println!(
-        "🔄 Same instance? {}",
-        Rc::as_ptr(&config1) == Rc::as_ptr(&config2)
-    );
+    println!("🔄 Same instance? {}", Shared::ptr_eq(&config1, &config2));
 
     // Use the application
     println!("\n--- Application Usage ---");
-    let app = container.get::<ApplicationService>();
+    let app = container.resolve::<ApplicationService>().unwrap();
 
     // Register some users
     match app.register_user("Alice Johnson", "alice@example.com") {
@@ -292,18 +266,18 @@ fn main() -> Result<(), Error> {
 
     // Demonstrate transient behavior
     println!("\n--- Transient Behavior ---");
-    let user_service1 = container.get::<UserService>();
-    let user_service2 = container.get::<UserService>();
+    let user_service1 = container.resolve::<UserService>().unwrap();
+    let user_service2 = container.resolve::<UserService>().unwrap();
 
     println!(
         "🔄 Different UserService instances? {}",
-        !std::ptr::eq(&user_service1, &user_service2)
+        !Shared::ptr_eq(&user_service1, &user_service2)
     );
 
     // But they share the same database singleton
     println!(
         "🔄 Same database instance? {}",
-        Rc::as_ptr(&user_service1.db) == Rc::as_ptr(&user_service2.db)
+        Shared::ptr_eq(&user_service1.db, &user_service2.db)
     );
 
     // Show some queries
@@ -315,14 +289,17 @@ fn main() -> Result<(), Error> {
     println!("\n--- Error Handling ---");
 
     // Try to get a service that wasn't registered
-    match container.try_get::<String>() {
+    match container.resolve::<String>() {
         Ok(_) => println!("This shouldn't happen"),
         Err(e) => println!("❌ Expected error: {}", e),
     }
 
     // Try to register a duplicate factory
-    let new_container = SaDi::new().factory(|_| "first".to_string());
-    match new_container.try_factory(|_| "duplicate".to_string()) {
+    let new_container = Container::new();
+    new_container
+        .bind_concrete::<String, String, _>(|_| "first".to_string())
+        .unwrap();
+    match new_container.bind_concrete::<String, String, _>(|_| "duplicate".to_string()) {
         Ok(_) => println!("This shouldn't happen either"),
         Err(e) => println!("❌ Expected error: {}", e),
     }
@@ -344,91 +321,105 @@ mod tests {
 
     #[test]
     fn test_container_setup() {
-        let container = SaDi::new()
-            .factory_singleton(|_| ConfigService::new())
-            .factory_singleton(|di: &SaDi| {
-                DatabaseService::new(di.get_singleton::<ConfigService>())
-            })
-            .factory(|di: &SaDi| {
-                LoggerService::new(
-                    di.get_singleton::<DatabaseService>(),
-                    di.get_singleton::<ConfigService>(),
-                )
-            });
+        let c = Container::new();
+        c.bind_concrete_singleton::<ConfigService, ConfigService, _>(|_| ConfigService::new())
+            .unwrap();
+        c.bind_concrete_singleton::<DatabaseService, DatabaseService, _>(|c| {
+            DatabaseService::new(c.resolve::<ConfigService>().unwrap())
+        })
+        .unwrap();
+        c.bind_concrete::<LoggerService, LoggerService, _>(|c| {
+            LoggerService::new(
+                c.resolve::<DatabaseService>().unwrap(),
+                c.resolve::<ConfigService>().unwrap(),
+            )
+        })
+        .unwrap();
 
-        let logger = container.get::<LoggerService>();
+        let logger = c.resolve::<LoggerService>().unwrap();
         logger.log("TEST", "Container setup works!");
     }
 
     #[test]
     fn test_singleton_sharing() {
-        let container = SaDi::new().factory_singleton(|_| ConfigService::new());
+        let c = Container::new();
+        c.bind_concrete_singleton::<ConfigService, ConfigService, _>(|_| ConfigService::new())
+            .unwrap();
 
-        let config1 = container.get_singleton::<ConfigService>();
-        let config2 = container.get_singleton::<ConfigService>();
+        let config1 = c.resolve::<ConfigService>().unwrap();
+        let config2 = c.resolve::<ConfigService>().unwrap();
 
         // Same instance
-        assert_eq!(Rc::as_ptr(&config1), Rc::as_ptr(&config2));
+        assert!(Shared::ptr_eq(&config1, &config2));
     }
 
     #[test]
     fn test_transient_behavior() {
-        let container = SaDi::new()
-            .factory_singleton(|_| ConfigService::new())
-            .factory_singleton(|di: &SaDi| {
-                DatabaseService::new(di.get_singleton::<ConfigService>())
-            })
-            .factory(|di: &SaDi| {
-                LoggerService::new(
-                    di.get_singleton::<DatabaseService>(),
-                    di.get_singleton::<ConfigService>(),
-                )
-            });
+        let c = Container::new();
+        c.bind_concrete_singleton::<ConfigService, ConfigService, _>(|_| ConfigService::new())
+            .unwrap();
+        c.bind_concrete_singleton::<DatabaseService, DatabaseService, _>(|c| {
+            DatabaseService::new(c.resolve::<ConfigService>().unwrap())
+        })
+        .unwrap();
+        c.bind_concrete::<LoggerService, LoggerService, _>(|c| {
+            LoggerService::new(
+                c.resolve::<DatabaseService>().unwrap(),
+                c.resolve::<ConfigService>().unwrap(),
+            )
+        })
+        .unwrap();
 
-        let logger1 = container.get::<LoggerService>();
-        let logger2 = container.get::<LoggerService>();
+        let logger1 = c.resolve::<LoggerService>().unwrap();
+        let logger2 = c.resolve::<LoggerService>().unwrap();
 
         // Different instances
-        assert_ne!(&logger1 as *const _, &logger2 as *const _);
+        assert!(!Shared::ptr_eq(&logger1, &logger2));
 
         // But same database
-        assert_eq!(Rc::as_ptr(&logger1.db), Rc::as_ptr(&logger2.db));
+        assert!(Shared::ptr_eq(&logger1.db, &logger2.db));
     }
 
     #[test]
     fn test_user_registration() {
-        let container = SaDi::new()
-            .factory_singleton(|_| ConfigService::new())
-            .factory_singleton(|di: &SaDi| {
-                DatabaseService::new(di.get_singleton::<ConfigService>())
-            })
-            .factory(|di: &SaDi| {
-                LoggerService::new(
-                    di.get_singleton::<DatabaseService>(),
-                    di.get_singleton::<ConfigService>(),
-                )
-            })
-            .factory(|di: &SaDi| {
-                UserService::new(
-                    di.get_singleton::<DatabaseService>(),
-                    di.get::<LoggerService>(),
-                )
-            })
-            .factory(|di: &SaDi| {
-                EmailService::new(
-                    di.get_singleton::<ConfigService>(),
-                    di.get::<LoggerService>(),
-                )
-            })
-            .factory(|di: &SaDi| {
-                ApplicationService::new(
-                    di.get::<UserService>(),
-                    di.get::<EmailService>(),
-                    di.get_singleton::<ConfigService>(),
-                )
-            });
+        let c = Container::new();
+        c.bind_concrete_singleton::<ConfigService, ConfigService, _>(|_| ConfigService::new())
+            .unwrap();
+        c.bind_concrete_singleton::<DatabaseService, DatabaseService, _>(|c| {
+            DatabaseService::new(c.resolve::<ConfigService>().unwrap())
+        })
+        .unwrap();
+        c.bind_concrete::<LoggerService, LoggerService, _>(|c| {
+            LoggerService::new(
+                c.resolve::<DatabaseService>().unwrap(),
+                c.resolve::<ConfigService>().unwrap(),
+            )
+        })
+        .unwrap();
+        c.bind_concrete::<UserService, UserService, _>(|c| {
+            UserService::new(
+                c.resolve::<DatabaseService>().unwrap(),
+                c.resolve::<LoggerService>().unwrap(),
+            )
+        })
+        .unwrap();
+        c.bind_concrete::<EmailService, EmailService, _>(|c| {
+            EmailService::new(
+                c.resolve::<ConfigService>().unwrap(),
+                c.resolve::<LoggerService>().unwrap(),
+            )
+        })
+        .unwrap();
+        c.bind_concrete::<ApplicationService, ApplicationService, _>(|c| {
+            ApplicationService::new(
+                c.resolve::<UserService>().unwrap(),
+                c.resolve::<EmailService>().unwrap(),
+                c.resolve::<ConfigService>().unwrap(),
+            )
+        })
+        .unwrap();
 
-        let app = container.get::<ApplicationService>();
+        let app = c.resolve::<ApplicationService>().unwrap();
         let result = app.register_user("Test User", "test@example.com");
 
         assert!(result.is_ok());
