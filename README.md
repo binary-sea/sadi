@@ -5,7 +5,7 @@
 [![License](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 [![Build Status](https://github.com/JoaoPedro61/sadi/actions/workflows/CI.yml/badge.svg)](https://github.com/JoaoPedro61/sadi/actions/workflows/CI.yml)
 
-A lightweight, type-safe dependency injection container for Rust applications. SaDi provides both transient and singleton service registration with automatic dependency resolution and circular dependency detection.
+A lightweight, type-safe dependency injection container for Rust applications. SaDi provides ergonomic service registration (including trait-object bindings), transient and singleton lifetimes, semi-automatic dependency resolution, and circular dependency detection.
 
 ## ✨ Features
 
@@ -23,19 +23,19 @@ Add this to your `Cargo.toml`:
 
 ```toml
 [dependencies]
-sadi = "0.1.2"
+sadi = "0.1.4"
 
 # Optional: Enable tracing support
-sadi = { version = "0.1.2", features = ["tracing"] }
+sadi = { version = "0.1.4", features = ["tracing"] }
 ```
 
 ## 🚀 Quick Start
 
 ```rust
-use sadi::SaDi;
+use sadi::{container, bind, Container, Shared};
 use std::rc::Rc;
 
-// Define your services
+// Define your services (non-thread-safe default uses `Rc` via `Shared`)
 struct DatabaseService {
     connection_string: String,
 }
@@ -46,34 +46,35 @@ impl DatabaseService {
             connection_string: "postgresql://localhost:5432/myapp".to_string(),
         }
     }
-    
+
     fn query(&self, sql: &str) -> String {
         format!("Executing '{}' on {}", sql, self.connection_string)
     }
 }
 
 struct UserService {
-    db: Rc<DatabaseService>,
+    db: Shared<DatabaseService>,
 }
 
 impl UserService {
-    fn new(db: Rc<DatabaseService>) -> Self {
+    fn new(db: Shared<DatabaseService>) -> Self {
         Self { db }
     }
-    
+
     fn create_user(&self, name: &str) -> String {
         self.db.query(&format!("INSERT INTO users (name) VALUES ('{}')", name))
     }
 }
 
 fn main() {
-    // Set up the dependency injection container
-    let container = SaDi::new()
-        .factory_singleton(|_| DatabaseService::new())
-        .factory(|di| UserService::new(di.get_singleton::<DatabaseService>()));
+    // Use the `container!` macro to register bindings ergonomically
+    let container = container! {
+        bind(singleton DatabaseService => |_| DatabaseService::new())
+        bind(UserService => |c| UserService::new(c.resolve::<DatabaseService>().unwrap()))
+    };
 
-    // Use your services
-    let user_service = container.get::<UserService>();
+    // Resolve and use services
+    let user_service = container.resolve::<UserService>().unwrap();
     println!("{}", user_service.create_user("Alice"));
 }
 ```
@@ -83,47 +84,42 @@ fn main() {
 ### Service Registration
 
 #### Transient Services
-Create new instances on each request:
+Create new instances on each request. The default `bind` registration is transient:
 
 ```rust
-use sadi::SaDi;
+use sadi::{container, bind};
+use uuid::Uuid;
 
 struct LoggerService {
     session_id: String,
 }
 
-let container = SaDi::new()
-    .factory(|_| LoggerService {
-        session_id: uuid::Uuid::new_v4().to_string()
-    });
+let c = container! {
+    bind(LoggerService => |_| LoggerService { session_id: Uuid::new_v4().to_string() })
+};
 
-// Each call creates a new logger with different session_id
-let logger1 = container.get::<LoggerService>();
-let logger2 = container.get::<LoggerService>();
+let logger1 = c.resolve::<LoggerService>().unwrap();
+let logger2 = c.resolve::<LoggerService>().unwrap();
 ```
 
 #### Singleton Services
-Create once and share across all dependents:
+Create once and share across all dependents. Use the `singleton` annotation in `bind`:
 
 ```rust
-use sadi::SaDi;
-use std::rc::Rc;
+use sadi::{container, bind, Shared};
 
 struct ConfigService {
     app_name: String,
     debug: bool,
 }
 
-let container = SaDi::new()
-    .factory_singleton(|_| ConfigService {
-        app_name: "MyApp".to_string(),
-        debug: true,
-    });
+let c = container! {
+    bind(singleton ConfigService => |_| ConfigService { app_name: "MyApp".to_string(), debug: true })
+};
 
-// Both calls return the same instance
-let config1 = container.get_singleton::<ConfigService>();
-let config2 = container.get_singleton::<ConfigService>();
-assert_eq!(Rc::as_ptr(&config1), Rc::as_ptr(&config2));
+let config1 = c.resolve::<ConfigService>().unwrap();
+let config2 = c.resolve::<ConfigService>().unwrap();
+assert!(Shared::ptr_eq(&config1, &config2));
 ```
 
 ### Error Handling
@@ -131,60 +127,58 @@ assert_eq!(Rc::as_ptr(&config1), Rc::as_ptr(&config2));
 SaDi provides both panicking and non-panicking variants:
 
 ```rust
-use sadi::{SaDi, Error};
+use sadi::{Container, Error};
 
-let container = SaDi::new()
-    .factory(|_| "Hello".to_string());
+let c = Container::new();
+c.bind_concrete::<String, String, _>(|_| "Hello".to_string()).unwrap();
 
-// Panicking version (use when you're sure service exists)
-let service = container.get::<String>();
+// Resolve (panicking)
+let service = c.resolve::<String>().unwrap();
 
-// Non-panicking version (returns Result)
-match container.try_get::<String>() {
-    Ok(service) => println!("Got: {}", service),
-    Err(err) => println!("Error: {}", err),
+// Non-panicking
+match c.resolve::<String>() {
+    Ok(s) => println!("Got: {}", s),
+    Err(e) => println!("Error: {}", e),
 }
 
-// Trying to get unregistered service
-match container.try_get::<u32>() {
+// Trying to resolve an unregistered type
+match c.resolve::<u32>() {
     Ok(_) => unreachable!(),
-    Err(Error { kind, message }) => {
-        println!("Error kind: {:?}", kind);
-        println!("Message: {}", message);
-    }
+    Err(e) => println!("Expected error: {}", e),
 }
 ```
 
 ### Dependency Injection
 
-Services can depend on other services:
+Services can depend on other services. Use the `container!` macro to register bindings concisely:
 
 ```rust
-use sadi::SaDi;
-use std::rc::Rc;
+use sadi::{container, bind, Shared};
 
 struct DatabaseService { /* ... */ }
+impl DatabaseService { fn new() -> Self { DatabaseService {} } }
+
 struct CacheService { /* ... */ }
+impl CacheService { fn new() -> Self { CacheService {} } }
+
 struct UserRepository {
-    db: Rc<DatabaseService>,
-    cache: Rc<CacheService>,
+    db: Shared<DatabaseService>,
+    cache: Shared<CacheService>,
 }
 
 impl UserRepository {
-    fn new(db: Rc<DatabaseService>, cache: Rc<CacheService>) -> Self {
+    fn new(db: Shared<DatabaseService>, cache: Shared<CacheService>) -> Self {
         Self { db, cache }
     }
 }
 
-let container = SaDi::new()
-    .factory_singleton(|_| DatabaseService::new())
-    .factory_singleton(|_| CacheService::new())
-    .factory(|di| UserRepository::new(
-        di.get_singleton::<DatabaseService>(),
-        di.get_singleton::<CacheService>(),
-    ));
+let c = container! {
+    bind(singleton DatabaseService => |_| DatabaseService::new())
+    bind(singleton CacheService => |_| CacheService::new())
+    bind(UserRepository => |c| UserRepository::new(c.resolve::<DatabaseService>().unwrap(), c.resolve::<CacheService>().unwrap()))
+};
 
-let repo = container.get::<UserRepository>();
+let repo = c.resolve::<UserRepository>().unwrap();
 ```
 
 ## 🔍 Advanced Features
@@ -194,38 +188,42 @@ let repo = container.get::<UserRepository>();
 SaDi automatically detects and prevents circular dependencies:
 
 ```rust
-use sadi::SaDi;
+use sadi::Container;
 
-// This will panic with detailed error message
-let container = SaDi::new()
-    .factory(|di| ServiceA::new(di.get::<ServiceB>()))
-    .factory(|di| ServiceB::new(di.get::<ServiceA>()));
+// Example: registering circular dependencies will produce a descriptive error at runtime
+let c = Container::new();
+// c.bind_concrete::<ServiceA, ServiceA, _>(|c| { let _ = c.resolve::<ServiceB>(); ServiceA });
+// c.bind_concrete::<ServiceB, ServiceB, _>(|c| { let _ = c.resolve::<ServiceA>(); ServiceB });
 
-// This panics: "Circular dependency detected: ServiceA -> ServiceB -> ServiceA"
-let service = container.get::<ServiceA>();
+match c.resolve::<ServiceA>() {
+    Ok(_) => println!("unexpected"),
+    Err(e) => println!("Circular dependency detected: {}", e),
+}
 ```
 
 ### Tracing Integration
 
-Enable the `tracing` feature for automatic logging:
+Enable the `tracing` feature for automatic logging (the crate's `default` feature includes `tracing`):
 
 ```toml
 [dependencies]
-sadi = { version = "0.1.2", features = ["tracing"] }
+sadi = { version = "0.1.4", features = ["tracing"] }
 ```
 
 ```rust
-use sadi::SaDi;
+use sadi::{container, bind};
 use tracing::info;
 
 #[tokio::main]
 async fn main() {
     tracing_subscriber::fmt::init();
-    
-    let container = SaDi::new()  // Logs: "Creating new SaDi container"
-        .factory_singleton(|_| DatabaseService::new());  // Logs registration
-    
-    let db = container.get_singleton::<DatabaseService>();  // Logs resolution
+
+    let c = container! {
+        bind(singleton DatabaseService => |_| DatabaseService::new())
+    };
+
+    // resolving singletons or other services will be trace-logged when tracing feature is enabled
+    let _db = c.resolve::<DatabaseService>().unwrap();
 }
 ```
 
@@ -234,14 +232,17 @@ async fn main() {
 Run the test suite:
 
 ```bash
-# Run all tests
+# Run all tests for the workspace
 cargo test
+
+# Run tests for the sadi crate only
+cargo test -p sadi
 
 # Run with tracing feature
 cargo test --features tracing
 
 # Run documentation tests
-cargo test --doc
+cargo test --doc -p sadi
 
 # Run example
 cargo run --example basic
@@ -251,9 +252,8 @@ cargo run --example basic
 
 ```
 sadi/
-├── src/
-│   ├── lib.rs          # Library entry point
-│   └── sadi.rs         # Core DI container implementation
+├── sadi/               # library crate
+│   └── src/            # core implementation (container, macros, types)
 ├── examples/
 │   └── basic/          # Comprehensive usage example
 └── README.md           # This file
@@ -263,7 +263,12 @@ sadi/
 
 ### Feature Flags
 
-- `tracing` - Enable tracing/logging support (optional)
+SaDi exposes a small set of feature flags. See `sadi/Cargo.toml` for the authoritative list, but the crate currently defines:
+
+- `thread-safe` (enabled by default) — switches internal shared pointer and synchronization primitives to `Arc` + `RwLock`/`Mutex` for thread-safe containers.
+- `tracing` (enabled by default) — integrates with the `tracing` crate to emit logs during registration/resolution.
+
+The workspace default enables both `thread-safe` and `tracing`. To opt out of thread-safe behavior (use `Rc` instead of `Arc`), disable the `thread-safe` feature.
 
 ### Environment Variables
 
@@ -313,19 +318,18 @@ cargo clippy -- -D warnings
 - [ ] **Async Circular Detection**: Proper handling in async contexts
 
 ### 🧵 Thread Safety
-- [ ] **Arc-based Container**: Thread-safe version of SaDi using `Arc` instead of `Rc`
-- [ ] **Send + Sync Services**: Support for services that implement `Send + Sync`
-- [ ] **Concurrent Access**: Multiple threads accessing services simultaneously
+- [x] **Arc-based Container**: Thread-safe version of SaDi using `Arc` instead of `Rc` (implemented behind the `thread-safe` feature)
+- [x] **Send + Sync Services**: Support for `Send + Sync` services in thread-safe mode (enforced by API bounds)
+- [x] **Concurrent Access**: Concurrent reads/writes supported via `RwLock`/`Mutex` in thread-safe mode
 - [ ] **Lock-free Operations**: Minimize contention in high-concurrency scenarios
 
 ### 🔧 Advanced Features
 - [ ] **Service Scoping**: Request-scoped, thread-scoped service lifetimes
-- [ ] **Lazy Initialization**: Defer singleton creation until first access
+- [x] **Lazy Initialization**: Singleton instances are created on first `provide` (implemented in `Factory`)
 - [ ] **Service Decorators**: Middleware/decoration patterns for services
 - [ ] **Conditional Registration**: Register services based on runtime conditions
 - [ ] **Service Health Checks**: Built-in health monitoring for services
 - [ ] **Service Metrics**: Performance and usage statistics
-- [ ] **Hot Reloading**: Dynamic service replacement without container restart
 
 ### 📦 Ecosystem Integration
 - [ ] **Tokio Integration**: First-class support for Tokio runtime
@@ -354,10 +358,12 @@ cargo clippy -- -D warnings
 - [ ] **Health Endpoints**: HTTP endpoints for container health checks
 
 ### 🎯 Performance
-- [ ] **Compile-time DI**: Zero-runtime-cost dependency injection
+- [ ] **Compile-time validation / Builder checks**: Improve compile-time validation and builder-time checks for dependency graphs
 - [ ] **Service Pooling**: Object pooling for expensive-to-create services
 - [ ] **Memory Optimization**: Reduced memory footprint for large containers
-- [ ] **SIMD Optimizations**: Vectorized operations where applicable
+
+### 📚 Long-term Wishlist
+- [ ] **Hot Reloading**: Dynamic service replacement without container restart (large, architecture-level feature; moved to long-term wishlist)
 
 ## 📄 License
 
