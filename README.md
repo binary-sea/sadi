@@ -323,7 +323,6 @@ cargo clippy -- -D warnings
 - [x] **Concurrent Access**: Concurrent reads/writes supported via `RwLock`/`Mutex` in thread-safe mode
 - [ ] **Lock-free Operations**: Minimize contention in high-concurrency scenarios
 
-
 ### 🔧 Advanced Features
 - [ ] **Service Scoping**: Request-scoped, thread-scoped service lifetimes
 - [x] **Lazy Initialization**: Singleton instances are created on first `provide` (implemented in `Factory`)
@@ -331,8 +330,6 @@ cargo clippy -- -D warnings
 - [ ] **Conditional Registration**: Register services based on runtime conditions
 - [ ] **Service Health Checks**: Built-in health monitoring for services
 - [ ] **Service Metrics**: Performance and usage statistics
-- [ ] **Hot Reloading**: Dynamic service replacement without container restart
-
 
 ### 📦 Ecosystem Integration
 - [ ] **Tokio Integration**: First-class support for Tokio runtime
@@ -340,7 +337,6 @@ cargo clippy -- -D warnings
 - [ ] **Axum Integration**: Support for Axum web framework
 - [ ] **Tower Service**: Implement Tower service trait
 - [ ] **Serde Support**: Serialize/deserialize container configuration
-
 
 ### 🛠️ Developer Experience
 - [ ] **Derive Macros**: Auto-generate factory functions from service structs
@@ -355,19 +351,19 @@ cargo clippy -- -D warnings
 - [ ] **Graceful Shutdown**: Proper cleanup on container disposal
 - [ ] **Fault Tolerance**: Circuit breaker pattern for failing services
 
-
 ### 📊 Observability
 - [ ] **OpenTelemetry**: Built-in telemetry and distributed tracing
 - [ ] **Prometheus Metrics**: Expose container metrics for monitoring
 - [ ] **Service Discovery**: Integration with service discovery systems
 - [ ] **Health Endpoints**: HTTP endpoints for container health checks
 
-
 ### 🎯 Performance
-- [ ] **Compile-time DI**: Zero-runtime-cost dependency injection
+- [ ] **Compile-time validation / Builder checks**: Improve compile-time validation and builder-time checks for dependency graphs
 - [ ] **Service Pooling**: Object pooling for expensive-to-create services
 - [ ] **Memory Optimization**: Reduced memory footprint for large containers
-- [ ] **SIMD Optimizations**: Vectorized operations where applicable
+
+### 📚 Long-term Wishlist
+- [ ] **Hot Reloading**: Dynamic service replacement without container restart (large, architecture-level feature; moved to long-term wishlist)
 
 ## 📄 License
 
