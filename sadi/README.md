@@ -308,12 +308,6 @@ cargo clippy -- -D warnings
 
 ## 📋 Roadmap & TODO
 
-### 🔄 Async Support
-- [ ] **Async Factory Functions**: Support for `async fn` factories
-- [ ] **Async Service Resolution**: Non-blocking service creation
-- [ ] **Async Singleton Caching**: Thread-safe async singleton management
-- [ ] **Async Circular Detection**: Proper handling in async contexts
-
 ### 🧵 Thread Safety
 - [x] **Arc-based Container**: Thread-safe version of SaDi using `Arc` instead of `Rc` (implemented behind the `thread-safe` feature)
 - [x] **Send + Sync Services**: Support for `Send + Sync` services in thread-safe mode (enforced by API bounds)
@@ -321,44 +315,25 @@ cargo clippy -- -D warnings
 - [ ] **Lock-free Operations**: Minimize contention in high-concurrency scenarios
 
 ### 🔧 Advanced Features
-- [ ] **Service Scoping**: Request-scoped, thread-scoped service lifetimes
 - [x] **Lazy Initialization**: Singleton instances are created on first `provide` (implemented in `Factory`)
-- [ ] **Service Decorators**: Middleware/decoration patterns for services
-- [ ] **Conditional Registration**: Register services based on runtime conditions
-- [ ] **Service Health Checks**: Verify singleton services are healthy before returning them
-- [ ] **Service Metrics**: Performance and usage statistics
+- [ ] **Service Metrics**: Internal container metrics for observability (resolution counts, timing)
 
 ### 📦 Ecosystem Integration
-- [ ] **Tokio Integration**: First-class support for Tokio runtime
-- [ ] **Actix-web Plugin**: Direct integration with Actix-web framework
-- [ ] **Axum Integration**: Support for Axum web framework
-- [ ] **Tower Service**: Implement Tower service trait
-- [ ] **Serde Support**: Serialize/deserialize container configuration
+- [ ] **Async Factory Support**: Enable async/await in factory functions for Tokio/async-std runtimes
+- [ ] **Actix-web Integration**: Extension trait and extractors for Actix-web framework
+- [ ] **Axum Integration**: Layer and extractor support for Axum web framework
+- [ ] **Rocket Integration**: Layer and extractor support for Rocket web framework
 
 ### 🛠️ Developer Experience
-- [ ] **Derive Macros**: Auto-generate factory functions from service structs
-- [ ] **Builder Validation**: Compile-time validation of dependency graphs
+- [ ] **Derive Macros**: Auto-generate factory functions from service structs (`#[injectable]`)
 - [ ] **Error Suggestions**: Better error messages with fix suggestions
-- [ ] **IDE Integration**: Language server support for dependency analysis
-- [ ] **Container Visualization**: Graphical representation of service dependencies
-
-### 🔒 Security & Reliability
-- [ ] **Concurrency Limits**: Limit concurrent service creations per binding
-- [ ] **Graceful Shutdown**: Proper cleanup on container disposal
-- [ ] **Retry Policies**: Retry factory invocation on transient failures
 
 ### 📊 Observability
 - [ ] **OpenTelemetry**: Built-in telemetry and distributed tracing
 - [ ] **Prometheus Metrics**: Expose container metrics for monitoring
-- [ ] **Service Discovery**: Integration with service discovery systems
 
 ### 🎯 Performance
-- [ ] **Compile-time validation / Builder checks**: Improve compile-time validation and builder-time checks for dependency graphs
-- [ ] **Service Pooling**: Object pooling for expensive-to-create services
 - [ ] **Memory Optimization**: Reduced memory footprint for large containers
-
-### 📚 Long-term Wishlist
-- [ ] **Hot Reloading**: Dynamic service replacement without container restart (large, architecture-level feature; moved to long-term wishlist)
 
 ## 📄 License
 
