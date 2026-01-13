@@ -4,7 +4,7 @@ version = 4
 
 [[package]]
 name = "basic"
-version = "0.2.1"
+version = "0.2.2"
 dependencies = [
  "sadi",
 ]
@@ -41,7 +41,7 @@ dependencies = [
 
 [[package]]
 name = "sadi"
-version = "0.2.1"
+version = "0.2.2"
 dependencies = [
  "tracing",
 ]
