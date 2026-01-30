@@ -12,7 +12,7 @@ pub struct Injector {
 
 struct InjectorInner {
     parent: Option<Shared<InjectorInner>>,
-    providers: Store<HashMap<TypeId, Provider>>,
+    providers: Store<HashMap<TypeId, Shared<Provider>>>,
     instances: Store<HashMap<TypeId, Shared<dyn Any>>>,
 }
 
@@ -66,11 +66,6 @@ impl Clone for Injector {
     }
 }
 
-/* ============================================================
- * Provider registration
- * ============================================================
- */
-
 impl Injector {
     pub fn provide<T: ?Sized + 'static>(&self, provider: Provider) {
         let type_id = TypeId::of::<T>();
@@ -81,84 +76,73 @@ impl Injector {
                 .providers
                 .write()
                 .unwrap()
-                .insert(type_id, provider);
+                .insert(type_id, Shared::new(provider));
         }
 
         #[cfg(not(feature = "thread-safe"))]
         {
-            self.inner.providers.borrow_mut().insert(type_id, provider);
+            self.inner
+                .providers
+                .borrow_mut()
+                .insert(type_id, Shared::new(provider));
+        }
+    }
+
+    pub fn resolve<T: 'static>(&self) -> Shared<T> {
+        let type_id = TypeId::of::<T>();
+
+        if let Some(instance) = self.get_instance(type_id) {
+            return instance.downcast::<T>().expect("Type mismatch in injector");
+        }
+
+        let provider = self.get_provider(type_id).expect("No provider found");
+
+        let instance = (provider.factory)(&self);
+
+        self.store_instance(type_id, instance.clone());
+
+        instance
+            .downcast::<T>()
+            .expect("Type mismatch in provider result")
+    }
+
+    fn get_provider(&self, type_id: TypeId) -> Option<Shared<Provider>> {
+        #[cfg(feature = "thread-safe")]
+        {
+            self.inner.providers.read().unwrap().get(&type_id).cloned()
+        }
+
+        #[cfg(not(feature = "thread-safe"))]
+        {
+            self.inner.providers.borrow().get(&type_id).cloned()
+        }
+    }
+
+    fn get_instance(&self, type_id: TypeId) -> Option<Shared<dyn Any>> {
+        #[cfg(feature = "thread-safe")]
+        {
+            self.inner.instances.read().unwrap().get(&type_id).cloned()
+        }
+
+        #[cfg(not(feature = "thread-safe"))]
+        {
+            self.inner.instances.borrow().get(&type_id).cloned()
+        }
+    }
+
+    fn store_instance(&self, type_id: TypeId, instance: Shared<dyn Any>) {
+        #[cfg(feature = "thread-safe")]
+        {
+            self.inner
+                .instances
+                .write()
+                .unwrap()
+                .insert(type_id, instance);
+        }
+
+        #[cfg(not(feature = "thread-safe"))]
+        {
+            self.inner.instances.borrow_mut().insert(type_id, instance);
         }
     }
 }
-
-/* ============================================================
- * Resolution
- * ============================================================
- */
-
-// impl Injector {
-//     pub fn resolve<T: 'static>(&self) -> Shared<T> {
-//         let type_id = TypeId::of::<T>();
-
-//         if let Some(instance) = self.get_instance(type_id) {
-//             return instance.downcast::<T>().expect("Type mismatch in injector");
-//         }
-
-//         let provider = self.get_provider(type_id).expect("No provider found");
-
-//         let instance = provider.create(self);
-
-//         self.store_instance(type_id, instance.clone());
-
-//         instance
-//             .downcast::<T>()
-//             .expect("Type mismatch in provider result")
-//     }
-// }
-
-/* ============================================================
- * Internal helpers
- * ============================================================
- */
-
-// impl Injector {
-//     fn get_provider(&self, type_id: TypeId) -> Option<Provider> {
-//         #[cfg(feature = "thread-safe")]
-//         {
-//             self.inner.providers.read().unwrap().get(&type_id).cloned()
-//         }
-
-//         #[cfg(not(feature = "thread-safe"))]
-//         {
-//             self.inner.providers.borrow().get(&type_id).cloned()
-//         }
-//     }
-
-//     fn get_instance(&self, type_id: TypeId) -> Option<Shared<dyn Any>> {
-//         #[cfg(feature = "thread-safe")]
-//         {
-//             self.inner.instances.read().unwrap().get(&type_id).cloned()
-//         }
-
-//         #[cfg(not(feature = "thread-safe"))]
-//         {
-//             self.inner.instances.borrow().get(&type_id).cloned()
-//         }
-//     }
-
-//     fn store_instance(&self, type_id: TypeId, instance: Shared<dyn Any>) {
-//         #[cfg(feature = "thread-safe")]
-//         {
-//             self.inner
-//                 .instances
-//                 .write()
-//                 .unwrap()
-//                 .insert(type_id, instance);
-//         }
-
-//         #[cfg(not(feature = "thread-safe"))]
-//         {
-//             self.inner.instances.borrow_mut().insert(type_id, instance);
-//         }
-//     }
-// }
