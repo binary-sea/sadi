@@ -37,6 +37,9 @@ use crate::injector::Injector;
 use crate::module::Module;
 use crate::runtime::Shared;
 
+#[cfg(feature = "tracing")]
+use tracing::{debug, info};
+
 /// The main application container for dependency injection.
 ///
 /// `Application` manages the lifecycle of modules and provides access to the root
@@ -119,6 +122,9 @@ impl Application {
     /// assert!(!app.is_bootstrapped());
     /// ```
     pub fn new(root: impl Module + 'static) -> Self {
+        #[cfg(feature = "tracing")]
+        info!("Creating new Application instance with root module");
+
         Self {
             root: Some(Box::new(root)),
             injector: Shared::new(Injector::root()),
@@ -175,7 +181,13 @@ impl Application {
     pub fn bootstrap(&mut self) {
         let root = self.root.take().expect("Application already bootstrapped");
 
+        #[cfg(feature = "tracing")]
+        info!("Starting application bootstrap process");
+
         Self::load_module(self.injector.clone(), root);
+
+        #[cfg(feature = "tracing")]
+        info!("Application bootstrap completed successfully");
     }
 
     /// Returns a shared reference to the root injector.
@@ -208,6 +220,9 @@ impl Application {
     /// // Both references point to the same injector
     /// ```
     pub fn injector(&self) -> Shared<Injector> {
+        #[cfg(feature = "tracing")]
+        debug!("Accessing root injector");
+
         self.injector.clone()
     }
 
@@ -240,7 +255,12 @@ impl Application {
     /// assert!(app.is_bootstrapped());
     /// ```
     pub fn is_bootstrapped(&self) -> bool {
-        self.root.is_none()
+        let bootstrapped = self.root.is_none();
+        
+        #[cfg(feature = "tracing")]
+        debug!("Checking application bootstrap state: {}", bootstrapped);
+
+        bootstrapped
     }
 
     /// Recursively loads a module and its imports into the injector hierarchy.
@@ -254,13 +274,35 @@ impl Application {
     /// - `parent`: The parent injector to create a child from
     /// - `module`: The module to load
     fn load_module(parent: Shared<Injector>, module: Box<dyn Module>) {
+        #[cfg(feature = "tracing")]
+        debug!("Loading module into injector hierarchy");
+
         let module_injector = Shared::new(Injector::child(parent.clone()));
 
-        for import in module.imports() {
+        #[cfg(feature = "tracing")]
+        debug!("Created child injector for module");
+
+        let imports = module.imports();
+        #[cfg(feature = "tracing")]
+        if !imports.is_empty() {
+            debug!("Module has {} imports, loading them first", imports.len());
+        }
+
+        #[allow(unused_variables)]
+        for (index, import) in imports.into_iter().enumerate() {
+            #[cfg(feature = "tracing")]
+            debug!("Loading import {}", index + 1);
+
             Self::load_module(module_injector.clone(), import);
         }
 
+        #[cfg(feature = "tracing")]
+        debug!("Registering module providers");
+
         module.providers(&module_injector);
+
+        #[cfg(feature = "tracing")]
+        debug!("Module loaded successfully");
     }
 }
 
