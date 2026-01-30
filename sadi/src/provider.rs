@@ -43,6 +43,9 @@ use crate::injector::Injector;
 use crate::runtime::Shared;
 use crate::scope::Scope;
 
+#[cfg(feature = "tracing")]
+use tracing::{debug, info};
+
 /// A factory function wrapper that manages service creation and lifecycle scope.
 ///
 /// A provider encapsulates both a factory function (that creates instances) and
@@ -123,9 +126,15 @@ impl Provider {
         T: Any + Send + Sync + 'static,
         F: Fn(Shared<Injector>) -> T + Send + Sync + 'static,
     {
+        #[cfg(feature = "tracing")]
+        info!("Creating singleton provider with Module scope (thread-safe)");
+
         Self {
             scope: Scope::Module,
             factory: Box::new(move |injector| {
+                #[cfg(feature = "tracing")]
+                debug!("Executing singleton factory for type instantiation");
+
                 Shared::new(factory(injector)) as Shared<dyn Any + Send + Sync>
             }),
         }
@@ -168,9 +177,15 @@ impl Provider {
         T: Any + Send + Sync + 'static,
         F: Fn(Shared<Injector>) -> T + Send + Sync + 'static,
     {
+        #[cfg(feature = "tracing")]
+        info!("Creating transient provider with Transient scope (thread-safe)");
+
         Self {
             scope: Scope::Transient,
             factory: Box::new(move |injector| {
+                #[cfg(feature = "tracing")]
+                debug!("Executing transient factory - creating new instance");
+
                 Shared::new(factory(injector)) as Shared<dyn Any + Send + Sync>
             }),
         }
@@ -218,9 +233,17 @@ impl Provider {
         T: Any + 'static,
         F: Fn(Shared<Injector>) -> T + 'static,
     {
+        #[cfg(feature = "tracing")]
+        info!("Creating singleton provider with Module scope (single-threaded)");
+
         Self {
             scope: Scope::Module,
-            factory: Box::new(move |injector| Shared::new(factory(injector)) as Shared<dyn Any>),
+            factory: Box::new(move |injector| {
+                #[cfg(feature = "tracing")]
+                debug!("Executing singleton factory for type instantiation");
+
+                Shared::new(factory(injector)) as Shared<dyn Any>
+            }),
         }
     }
 
@@ -263,9 +286,17 @@ impl Provider {
         T: Any + 'static,
         F: Fn(Shared<Injector>) -> T + 'static,
     {
+        #[cfg(feature = "tracing")]
+        info!("Creating transient provider with Transient scope (single-threaded)");
+
         Self {
             scope: Scope::Transient,
-            factory: Box::new(move |injector| Shared::new(factory(injector)) as Shared<dyn Any>),
+            factory: Box::new(move |injector| {
+                #[cfg(feature = "tracing")]
+                debug!("Executing transient factory - creating new instance");
+
+                Shared::new(factory(injector)) as Shared<dyn Any>
+            }),
         }
     }
 }

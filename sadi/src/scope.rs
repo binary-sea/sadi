@@ -1,3 +1,6 @@
+#[cfg(feature = "tracing")]
+use tracing::debug;
+
 /// Defines the lifecycle scope of a service in the dependency injection container.
 ///
 /// # Variants
@@ -30,6 +33,17 @@ pub enum Scope {
     Transient,
 }
 
+#[cfg(feature = "tracing")]
+impl std::fmt::Display for Scope {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Scope::Root => write!(f, "Root"),
+            Scope::Module => write!(f, "Module"),
+            Scope::Transient => write!(f, "Transient"),
+        }
+    }
+}
+
 impl Scope {
     /// Checks if this scope represents a singleton service.
     ///
@@ -52,7 +66,15 @@ impl Scope {
     /// assert!(!Scope::Transient.is_singleton());
     /// ```
     pub fn is_singleton(self) -> bool {
-        matches!(self, Scope::Root | Scope::Module)
+        let result = matches!(self, Scope::Root | Scope::Module);
+
+        #[cfg(feature = "tracing")]
+        debug!(
+            "Checking scope lifecycle: scope={}, is_singleton={}",
+            self, result
+        );
+
+        result
     }
 }
 
