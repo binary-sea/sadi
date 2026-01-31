@@ -3,8 +3,11 @@ use std::{
     collections::HashMap,
 };
 
-use crate::runtime::{Shared, Store};
 use crate::{Scope, provider::Provider};
+use crate::{
+    resolve_guard::ResolveGuard,
+    runtime::{Shared, Store},
+};
 
 pub struct Injector {
     inner: Shared<InjectorInner>,
@@ -90,6 +93,8 @@ impl Injector {
 
     pub fn resolve<T: 'static>(&self) -> Shared<T> {
         let type_id = TypeId::of::<T>();
+
+        let _guard = ResolveGuard::push(type_id).expect("Circular dependency detected");
 
         if let Some(instance) = self.get_instance(type_id) {
             return instance.downcast::<T>().expect("Type mismatch");
