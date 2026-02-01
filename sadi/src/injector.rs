@@ -4,11 +4,10 @@ use std::{
 };
 
 use crate::error::Error;
-use crate::{Scope, provider::Provider};
-use crate::{
-    resolve_guard::ResolveGuard,
-    runtime::{Shared, Store},
-};
+use crate::provider::Provider;
+use crate::resolve_guard::ResolveGuard;
+use crate::runtime::{Shared, Store};
+use crate::scope::Scope;
 
 pub struct Injector {
     inner: Shared<InjectorInner>,
@@ -71,7 +70,7 @@ impl Clone for Injector {
 }
 
 impl Injector {
-    pub fn provide<T: ?Sized + 'static>(&self, provider: Provider) -> Result<(), Error> {
+    pub fn try_provide<T: ?Sized + 'static>(&self, provider: Provider) -> Result<(), Error> {
         let type_id = TypeId::of::<T>();
         let type_name = std::any::type_name::<T>();
         let scope_label = match provider.scope {
@@ -101,7 +100,12 @@ impl Injector {
         Ok(())
     }
 
-    pub fn resolve<T: 'static>(&self) -> Result<Shared<T>, Error> {
+    pub fn provide<T: ?Sized + 'static>(&self, provider: Provider) -> &Self {
+        self.try_provide::<T>(provider).unwrap();
+        self
+    }
+
+    pub fn try_resolve<T: 'static>(&self) -> Result<Shared<T>, Error> {
         let type_id = TypeId::of::<T>();
         let type_name = std::any::type_name::<T>();
 
@@ -144,6 +148,14 @@ impl Injector {
         }
 
         Ok(typed)
+    }
+
+    pub fn resolve<T: 'static>(&self) -> Shared<T> {
+        self.try_resolve::<T>().unwrap()
+    }
+
+    pub fn optional_resolve<T: 'static>(&self) -> Option<Shared<T>> {
+        self.try_resolve::<T>().ok()
     }
 
     fn get_provider(&self, type_id: TypeId) -> Option<Shared<Provider>> {

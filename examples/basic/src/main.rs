@@ -130,36 +130,42 @@ fn main() {
     let injector = sadi::runtime::Shared::new(Injector::root());
 
     // Register singleton Config
-    injector.provide::<Config>(Provider::singleton(|_injector| {
-        Config::new()
-    }));
+    injector
+        .try_provide::<Config>(Provider::singleton(|_injector| Config::new()))
+        .expect("failed to register Config");
 
     // Register singleton Logger
-    injector.provide::<Logger>(Provider::singleton(|_injector| {
-        let config = Config::new();
-        Logger::new(&config)
-    }));
+    injector
+        .try_provide::<Logger>(Provider::singleton(|_injector| {
+            let config = Config::new();
+            Logger::new(&config)
+        }))
+        .expect("failed to register Logger");
 
     // Register singleton Database
-    injector.provide::<Database>(Provider::singleton(|_injector| {
-        let config = Config::new();
-        Database::new(&config)
-    }));
+    injector
+        .try_provide::<Database>(Provider::singleton(|_injector| {
+            let config = Config::new();
+            Database::new(&config)
+        }))
+        .expect("failed to register Database");
 
     // Register singleton UserService
-    injector.provide::<UserService>(Provider::singleton(|_injector| {
-        UserService
-    }));
+    injector
+        .try_provide::<UserService>(Provider::singleton(|_injector| UserService))
+        .expect("failed to register UserService");
 
     // Register singleton Cache
-    injector.provide::<Cache>(Provider::singleton(|_injector| {
-        Cache::new()
-    }));
+    injector
+        .try_provide::<Cache>(Provider::singleton(|_injector| Cache::new()))
+        .expect("failed to register Cache");
 
     // Register transient RequestHandler
-    injector.provide::<RequestHandler>(Provider::transient(|_injector| {
-        RequestHandler::new()
-    }));
+    injector
+        .try_provide::<RequestHandler>(Provider::transient(|_injector| {
+            RequestHandler::new()
+        }))
+        .expect("failed to register RequestHandler");
 
     println!("✓ All services registered!\n");
 
@@ -169,8 +175,8 @@ fn main() {
     println!("────────────────────────────────────────────────────────");
     println!("Example 1: Singleton Services (same instance)");
     println!("────────────────────────────────────────────────────────");
-    let config1 = injector.resolve::<Config>();
-    let config2 = injector.resolve::<Config>();
+    let config1 = injector.try_resolve::<Config>().expect("failed to resolve Config");
+    let config2 = injector.try_resolve::<Config>().expect("failed to resolve Config");
     println!("Config 1: {:?}", config1);
     println!("Config 2: {:?}", config2);
     let same = sadi::runtime::Shared::ptr_eq(&config1, &config2);
@@ -182,8 +188,8 @@ fn main() {
     println!("────────────────────────────────────────────────────────");
     println!("Example 2: Dependency Resolution");
     println!("────────────────────────────────────────────────────────");
-    let db1 = injector.resolve::<Database>();
-    let db2 = injector.resolve::<Database>();
+    let db1 = injector.try_resolve::<Database>().expect("failed to resolve Database");
+    let db2 = injector.try_resolve::<Database>().expect("failed to resolve Database");
     println!("Database 1: {:?}", db1);
     println!("Database 2: {:?}", db2);
     let same_db = sadi::runtime::Shared::ptr_eq(&db1, &db2);
@@ -195,11 +201,13 @@ fn main() {
     println!("────────────────────────────────────────────────────────");
     println!("Example 3: Using Services with Dependencies");
     println!("────────────────────────────────────────────────────────");
-    let user_service = injector.resolve::<UserService>();
+    let user_service = injector
+        .try_resolve::<UserService>()
+        .expect("failed to resolve UserService");
     let result = user_service.get_user(&db1);
     println!("UserService result: {}", result);
 
-    let cache = injector.resolve::<Cache>();
+    let cache = injector.try_resolve::<Cache>().expect("failed to resolve Cache");
     println!("Cache: {:?}", cache);
     if let Some(value) = cache.get("user:1") {
         println!("Cache lookup: {}", value);
@@ -212,7 +220,7 @@ fn main() {
     println!("────────────────────────────────────────────────────────");
     println!("Example 4: Logger (Singleton with configuration)");
     println!("────────────────────────────────────────────────────────");
-    let logger = injector.resolve::<Logger>();
+    let logger = injector.try_resolve::<Logger>().expect("failed to resolve Logger");
     logger.log("Application started");
     logger.log("Services initialized");
     logger.log("Ready to handle requests");
@@ -224,8 +232,12 @@ fn main() {
     println!("────────────────────────────────────────────────────────");
     println!("Example 5: Transient Services (different instances)");
     println!("────────────────────────────────────────────────────────");
-    let handler1 = injector.resolve::<RequestHandler>();
-    let handler2 = injector.resolve::<RequestHandler>();
+    let handler1 = injector
+        .try_resolve::<RequestHandler>()
+        .expect("failed to resolve RequestHandler");
+    let handler2 = injector
+        .try_resolve::<RequestHandler>()
+        .expect("failed to resolve RequestHandler");
     println!("Handler 1: {:?}", handler1);
     println!("Handler 2: {:?}", handler2);
     println!("Handler 1 message: {}", handler1.handle("Get user"));
@@ -240,7 +252,9 @@ fn main() {
     println!("Example 6: Multiple requests with transient handlers");
     println!("────────────────────────────────────────────────────────");
     for i in 1..=3 {
-        let handler = injector.resolve::<RequestHandler>();
+        let handler = injector
+            .try_resolve::<RequestHandler>()
+            .expect("failed to resolve RequestHandler");
         println!("Request {}: {}", i, handler.handle(&format!("Operation {}", i)));
     }
     println!();
@@ -251,10 +265,10 @@ fn main() {
     println!("────────────────────────────────────────────────────────");
     println!("Example 7: Verify singleton persistence across resolves");
     println!("────────────────────────────────────────────────────────");
-    let config3 = injector.resolve::<Config>();
-    let db3 = injector.resolve::<Database>();
-    let cache1 = injector.resolve::<Cache>();
-    let cache2 = injector.resolve::<Cache>();
+    let config3 = injector.try_resolve::<Config>().expect("failed to resolve Config");
+    let db3 = injector.try_resolve::<Database>().expect("failed to resolve Database");
+    let cache1 = injector.try_resolve::<Cache>().expect("failed to resolve Cache");
+    let cache2 = injector.try_resolve::<Cache>().expect("failed to resolve Cache");
 
     println!("Config instances same: {}", sadi::runtime::Shared::ptr_eq(&config1, &config3));
     println!("Database instances same: {}", sadi::runtime::Shared::ptr_eq(&db1, &db3));
@@ -267,9 +281,9 @@ fn main() {
     println!("────────────────────────────────────────────────────────");
     println!("Example 8: Service Composition");
     println!("────────────────────────────────────────────────────────");
-    let logger = injector.resolve::<Logger>();
-    let config = injector.resolve::<Config>();
-    let db = injector.resolve::<Database>();
+    let logger = injector.try_resolve::<Logger>().expect("failed to resolve Logger");
+    let config = injector.try_resolve::<Config>().expect("failed to resolve Config");
+    let db = injector.try_resolve::<Database>().expect("failed to resolve Database");
     
     logger.log(&format!("Database initialized at {}", config.database_url));
     logger.log(&db.query("SELECT COUNT(*) FROM users"));

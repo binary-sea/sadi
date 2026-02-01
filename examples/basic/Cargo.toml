@@ -8,4 +8,4 @@ license-file.workspace = true
 authors.workspace = true
 
 [dependencies]
-sadi = { path = "../../sadi", features = ["tracing"] }
+sadi = { path = "../../sadi", features = ["tracing", "debug"] }

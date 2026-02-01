@@ -47,12 +47,6 @@ pub enum ErrorKind {
     ProviderAlreadyRegistered,
     /// Circular dependency detected in resolution chain.
     CircularDependency,
-    /// Factory execution failed (panic or invalid state).
-    FactoryExecutionFailed,
-    /// Invalid scope transition or configuration.
-    InvalidScope,
-    /// Module initialization or loading failed.
-    ModuleLoadFailed,
 }
 
 /// Container error structure.
@@ -122,30 +116,6 @@ impl Error {
             ),
         )
     }
-
-    /// Factory closure execution failed.
-    pub fn factory_execution_failed(type_name: &str, reason: &str) -> Self {
-        Self::new(
-            ErrorKind::FactoryExecutionFailed,
-            format!("Factory execution failed for {}: {}", type_name, reason),
-        )
-    }
-
-    /// Invalid scope or scope transition.
-    pub fn invalid_scope(reason: &str) -> Self {
-        Self::new(
-            ErrorKind::InvalidScope,
-            format!("Invalid scope: {}", reason),
-        )
-    }
-
-    /// Module initialization or loading failed.
-    pub fn module_load_failed(module_name: &str, reason: &str) -> Self {
-        Self::new(
-            ErrorKind::ModuleLoadFailed,
-            format!("Module '{}' failed to load: {}", module_name, reason),
-        )
-    }
 }
 
 impl fmt::Display for Error {
@@ -197,29 +167,6 @@ mod tests {
         let err = Error::circular_dependency(&chain);
         assert_eq!(err.kind == ErrorKind::CircularDependency, true);
         assert!(err.message.contains("A -> B -> A"));
-    }
-
-    #[test]
-    fn factory_execution_failed_error() {
-        let err = Error::factory_execution_failed("ServiceX", "out of memory");
-        assert_eq!(err.kind == ErrorKind::FactoryExecutionFailed, true);
-        assert!(err.message.contains("ServiceX"));
-        assert!(err.message.contains("out of memory"));
-    }
-
-    #[test]
-    fn invalid_scope_error() {
-        let err = Error::invalid_scope("Unknown scope type");
-        assert_eq!(err.kind == ErrorKind::InvalidScope, true);
-        assert!(err.message.contains("Unknown scope type"));
-    }
-
-    #[test]
-    fn module_load_failed_error() {
-        let err = Error::module_load_failed("AuthModule", "missing config");
-        assert_eq!(err.kind == ErrorKind::ModuleLoadFailed, true);
-        assert!(err.message.contains("AuthModule"));
-        assert!(err.message.contains("missing config"));
     }
 
     #[test]
