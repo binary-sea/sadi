@@ -3,6 +3,7 @@ use std::{
     collections::HashMap,
 };
 
+use crate::error::Error;
 use crate::{Scope, provider::Provider};
 use crate::{
     resolve_guard::ResolveGuard,
@@ -70,44 +71,64 @@ impl Clone for Injector {
 }
 
 impl Injector {
-    pub fn provide<T: ?Sized + 'static>(&self, provider: Provider) {
+    pub fn provide<T: ?Sized + 'static>(&self, provider: Provider) -> Result<(), Error> {
         let type_id = TypeId::of::<T>();
+        let type_name = std::any::type_name::<T>();
+        let scope_label = match provider.scope {
+            Scope::Root => "root",
+            Scope::Module => "module",
+            Scope::Transient => "transient",
+        };
 
         #[cfg(feature = "thread-safe")]
         {
-            self.inner
-                .providers
-                .write()
-                .unwrap()
-                .insert(type_id, Shared::new(provider));
+            let mut providers = self.inner.providers.write().unwrap();
+            if providers.contains_key(&type_id) {
+                return Err(Error::provider_already_registered(type_name, scope_label));
+            }
+            providers.insert(type_id, Shared::new(provider));
         }
 
         #[cfg(not(feature = "thread-safe"))]
         {
-            self.inner
-                .providers
-                .borrow_mut()
-                .insert(type_id, Shared::new(provider));
+            let mut providers = self.inner.providers.borrow_mut();
+            if providers.contains_key(&type_id) {
+                return Err(Error::provider_already_registered(type_name, scope_label));
+            }
+            providers.insert(type_id, Shared::new(provider));
         }
+
+        Ok(())
     }
 
-    pub fn resolve<T: 'static>(&self) -> Shared<T> {
+    pub fn resolve<T: 'static>(&self) -> Result<Shared<T>, Error> {
         let type_id = TypeId::of::<T>();
+        let type_name = std::any::type_name::<T>();
 
-        let _guard = ResolveGuard::push(type_id).expect("Circular dependency detected");
+        let _guard = ResolveGuard::push(type_id)?;
 
         if let Some(instance) = self.get_instance(type_id) {
-            return instance.downcast::<T>().expect("Type mismatch");
+            return instance
+                .downcast::<T>()
+                .map_err(|_| Error::type_mismatch(type_name));
         }
 
-        let provider = self.get_provider(type_id).expect("No provider found");
+        let provider = self
+            .get_provider(type_id)
+            .ok_or_else(|| Error::service_not_provided(type_name))?;
 
         if provider.scope == Scope::Transient {
             let instance = (provider.factory)(self);
-            return instance.downcast::<T>().expect("Type mismatch");
+            return instance
+                .downcast::<T>()
+                .map_err(|_| Error::type_mismatch(type_name));
         }
 
         let instance = (provider.factory)(self);
+        let typed = instance
+            .clone()
+            .downcast::<T>()
+            .map_err(|_| Error::type_mismatch(type_name))?;
 
         match provider.scope {
             Scope::Root => {
@@ -122,7 +143,7 @@ impl Injector {
             Scope::Transient => unreachable!(),
         }
 
-        instance.downcast::<T>().expect("Type mismatch")
+        Ok(typed)
     }
 
     fn get_provider(&self, type_id: TypeId) -> Option<Shared<Provider>> {

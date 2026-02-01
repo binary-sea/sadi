@@ -1,5 +1,7 @@
 use std::{any::TypeId, cell::RefCell};
 
+use crate::error::{Error, ErrorKind};
+
 thread_local! {
     static RESOLVE_STACK: RefCell<Vec<TypeId>> = RefCell::new(Vec::new());
 }
@@ -9,14 +11,17 @@ pub struct ResolveGuard {
 }
 
 impl ResolveGuard {
-    pub fn push(type_id: TypeId) -> Result<Self, String> {
+    pub fn push(type_id: TypeId) -> Result<Self, Error> {
         RESOLVE_STACK.with(|stack| {
             let mut stack = stack.borrow_mut();
 
             if stack.contains(&type_id) {
-                return Err(format!(
-                    "Cyclic dependency detected while resolving type_id: {:?}",
-                    type_id
+                return Err(Error::new(
+                    ErrorKind::CircularDependency,
+                    format!(
+                        "Circular dependency detected while resolving type_id: {:?}",
+                        type_id
+                    ),
                 ));
             }
 

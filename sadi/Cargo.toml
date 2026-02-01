@@ -15,7 +15,7 @@ authors.workspace = true
 tracing = { version = "0.1.41", optional = true }
 
 [features]
-default = ["tracing", "debug"]
+default = ["tracing"]
 
 thread-safe = []
 tracing = ["dep:tracing"]
