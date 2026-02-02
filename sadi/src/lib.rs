@@ -6,6 +6,7 @@ pub mod provider;
 pub mod resolve_guard;
 pub mod runtime;
 pub mod scope;
+pub mod instance;
 
 pub use application::*;
 pub use error::*;

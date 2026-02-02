@@ -48,8 +48,7 @@ struct Database {
 
 impl Database {
     fn new(config: &Config) -> Self {
-        static COUNTER: std::sync::atomic::AtomicUsize =
-            std::sync::atomic::AtomicUsize::new(0);
+        static COUNTER: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
         let id = COUNTER.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
 
         Self {
@@ -82,9 +81,7 @@ struct RequestHandler {
 impl RequestHandler {
     fn new() -> Self {
         use std::time::{SystemTime, UNIX_EPOCH};
-        let duration = SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .unwrap();
+        let duration = SystemTime::now().duration_since(UNIX_EPOCH).unwrap();
         Self {
             id: duration.as_nanos() as u64 % 10000,
         }
@@ -162,9 +159,7 @@ fn main() {
 
     // Register transient RequestHandler
     injector
-        .try_provide::<RequestHandler>(Provider::transient(|_injector| {
-            RequestHandler::new()
-        }))
+        .try_provide::<RequestHandler>(Provider::transient(|_injector| RequestHandler::new()))
         .expect("failed to register RequestHandler");
 
     println!("✓ All services registered!\n");
@@ -175,8 +170,12 @@ fn main() {
     println!("────────────────────────────────────────────────────────");
     println!("Example 1: Singleton Services (same instance)");
     println!("────────────────────────────────────────────────────────");
-    let config1 = injector.try_resolve::<Config>().expect("failed to resolve Config");
-    let config2 = injector.try_resolve::<Config>().expect("failed to resolve Config");
+    let config1 = injector
+        .try_resolve::<Config>()
+        .expect("failed to resolve Config");
+    let config2 = injector
+        .try_resolve::<Config>()
+        .expect("failed to resolve Config");
     println!("Config 1: {:?}", config1);
     println!("Config 2: {:?}", config2);
     let same = sadi::runtime::Shared::ptr_eq(&config1, &config2);
@@ -188,8 +187,12 @@ fn main() {
     println!("────────────────────────────────────────────────────────");
     println!("Example 2: Dependency Resolution");
     println!("────────────────────────────────────────────────────────");
-    let db1 = injector.try_resolve::<Database>().expect("failed to resolve Database");
-    let db2 = injector.try_resolve::<Database>().expect("failed to resolve Database");
+    let db1 = injector
+        .try_resolve::<Database>()
+        .expect("failed to resolve Database");
+    let db2 = injector
+        .try_resolve::<Database>()
+        .expect("failed to resolve Database");
     println!("Database 1: {:?}", db1);
     println!("Database 2: {:?}", db2);
     let same_db = sadi::runtime::Shared::ptr_eq(&db1, &db2);
@@ -207,7 +210,9 @@ fn main() {
     let result = user_service.get_user(&db1);
     println!("UserService result: {}", result);
 
-    let cache = injector.try_resolve::<Cache>().expect("failed to resolve Cache");
+    let cache = injector
+        .try_resolve::<Cache>()
+        .expect("failed to resolve Cache");
     println!("Cache: {:?}", cache);
     if let Some(value) = cache.get("user:1") {
         println!("Cache lookup: {}", value);
@@ -220,7 +225,9 @@ fn main() {
     println!("────────────────────────────────────────────────────────");
     println!("Example 4: Logger (Singleton with configuration)");
     println!("────────────────────────────────────────────────────────");
-    let logger = injector.try_resolve::<Logger>().expect("failed to resolve Logger");
+    let logger = injector
+        .try_resolve::<Logger>()
+        .expect("failed to resolve Logger");
     logger.log("Application started");
     logger.log("Services initialized");
     logger.log("Ready to handle requests");
@@ -255,7 +262,11 @@ fn main() {
         let handler = injector
             .try_resolve::<RequestHandler>()
             .expect("failed to resolve RequestHandler");
-        println!("Request {}: {}", i, handler.handle(&format!("Operation {}", i)));
+        println!(
+            "Request {}: {}",
+            i,
+            handler.handle(&format!("Operation {}", i))
+        );
     }
     println!();
 
@@ -265,14 +276,31 @@ fn main() {
     println!("────────────────────────────────────────────────────────");
     println!("Example 7: Verify singleton persistence across resolves");
     println!("────────────────────────────────────────────────────────");
-    let config3 = injector.try_resolve::<Config>().expect("failed to resolve Config");
-    let db3 = injector.try_resolve::<Database>().expect("failed to resolve Database");
-    let cache1 = injector.try_resolve::<Cache>().expect("failed to resolve Cache");
-    let cache2 = injector.try_resolve::<Cache>().expect("failed to resolve Cache");
+    let config3 = injector
+        .try_resolve::<Config>()
+        .expect("failed to resolve Config");
+    let db3 = injector
+        .try_resolve::<Database>()
+        .expect("failed to resolve Database");
+    let cache1 = injector
+        .try_resolve::<Cache>()
+        .expect("failed to resolve Cache");
+    let cache2 = injector
+        .try_resolve::<Cache>()
+        .expect("failed to resolve Cache");
 
-    println!("Config instances same: {}", sadi::runtime::Shared::ptr_eq(&config1, &config3));
-    println!("Database instances same: {}", sadi::runtime::Shared::ptr_eq(&db1, &db3));
-    println!("Cache instances same: {}", sadi::runtime::Shared::ptr_eq(&cache1, &cache2));
+    println!(
+        "Config instances same: {}",
+        sadi::runtime::Shared::ptr_eq(&config1, &config3)
+    );
+    println!(
+        "Database instances same: {}",
+        sadi::runtime::Shared::ptr_eq(&db1, &db3)
+    );
+    println!(
+        "Cache instances same: {}",
+        sadi::runtime::Shared::ptr_eq(&cache1, &cache2)
+    );
     println!();
 
     // ────────────────────────────────────────────────────────────
@@ -281,10 +309,16 @@ fn main() {
     println!("────────────────────────────────────────────────────────");
     println!("Example 8: Service Composition");
     println!("────────────────────────────────────────────────────────");
-    let logger = injector.try_resolve::<Logger>().expect("failed to resolve Logger");
-    let config = injector.try_resolve::<Config>().expect("failed to resolve Config");
-    let db = injector.try_resolve::<Database>().expect("failed to resolve Database");
-    
+    let logger = injector
+        .try_resolve::<Logger>()
+        .expect("failed to resolve Logger");
+    let config = injector
+        .try_resolve::<Config>()
+        .expect("failed to resolve Config");
+    let db = injector
+        .try_resolve::<Database>()
+        .expect("failed to resolve Database");
+
     logger.log(&format!("Database initialized at {}", config.database_url));
     logger.log(&db.query("SELECT COUNT(*) FROM users"));
     logger.log("Service composition working perfectly!");

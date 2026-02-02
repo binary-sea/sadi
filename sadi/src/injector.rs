@@ -4,10 +4,14 @@ use std::{
 };
 
 use crate::error::Error;
+use crate::instance::Instance;
 use crate::provider::Provider;
 use crate::resolve_guard::ResolveGuard;
 use crate::runtime::{Shared, Store};
 use crate::scope::Scope;
+
+#[cfg(feature = "thread-safe")]
+use crate::runtime::ThreadSafe;
 
 pub struct Injector {
     inner: Shared<InjectorInner>,
@@ -105,59 +109,6 @@ impl Injector {
         self
     }
 
-    pub fn try_resolve<T: 'static>(&self) -> Result<Shared<T>, Error> {
-        let type_id = TypeId::of::<T>();
-        let type_name = std::any::type_name::<T>();
-
-        let _guard = ResolveGuard::push(type_id)?;
-
-        if let Some(instance) = self.get_instance(type_id) {
-            return instance
-                .downcast::<T>()
-                .map_err(|_| Error::type_mismatch(type_name));
-        }
-
-        let provider = self
-            .get_provider(type_id)
-            .ok_or_else(|| Error::service_not_provided(type_name))?;
-
-        if provider.scope == Scope::Transient {
-            let instance = (provider.factory)(self);
-            return instance
-                .downcast::<T>()
-                .map_err(|_| Error::type_mismatch(type_name));
-        }
-
-        let instance = (provider.factory)(self);
-        let typed = instance
-            .clone()
-            .downcast::<T>()
-            .map_err(|_| Error::type_mismatch(type_name))?;
-
-        match provider.scope {
-            Scope::Root => {
-                let root = self.root_injector();
-                root.store_instance(type_id, instance.clone());
-            }
-
-            Scope::Module => {
-                self.store_instance(type_id, instance.clone());
-            }
-
-            Scope::Transient => unreachable!(),
-        }
-
-        Ok(typed)
-    }
-
-    pub fn resolve<T: 'static>(&self) -> Shared<T> {
-        self.try_resolve::<T>().unwrap()
-    }
-
-    pub fn optional_resolve<T: 'static>(&self) -> Option<Shared<T>> {
-        self.try_resolve::<T>().ok()
-    }
-
     fn get_provider(&self, type_id: TypeId) -> Option<Shared<Provider>> {
         let local = {
             #[cfg(feature = "thread-safe")]
@@ -238,5 +189,122 @@ impl Injector {
         }
 
         current
+    }
+}
+
+#[cfg(not(feature = "thread-safe"))]
+impl Injector {
+    pub fn try_resolve<T: ?Sized + 'static>(&self) -> Result<Shared<T>, Error> {
+        let type_id = TypeId::of::<T>();
+        let type_name = std::any::type_name::<T>();
+
+        let _guard = ResolveGuard::push(type_id)?;
+
+        if let Some(instance) = self.get_instance(type_id) {
+            return instance
+                .downcast::<Instance<T>>()
+                .map(|instance| instance.value.clone())
+                .map_err(|_| Error::type_mismatch(type_name));
+        }
+
+        let provider = self
+            .get_provider(type_id)
+            .ok_or_else(|| Error::service_not_provided(type_name))?;
+
+        if provider.scope == Scope::Transient {
+            let instance = Instance::new((provider.factory)(self)).as_any();
+            return instance
+                .downcast::<Instance<T>>()
+                .map(|instance| instance.value.clone())
+                .map_err(|_| Error::type_mismatch(type_name));
+        }
+
+        let instance = Instance::new((provider.factory)(self)).as_any();
+        let typed = instance
+            .clone()
+            .downcast::<Instance<T>>()
+            .map(|instance| instance.value.clone())
+            .map_err(|_| Error::type_mismatch(type_name))?;
+
+        match provider.scope {
+            Scope::Root => {
+                let root = self.root_injector();
+                root.store_instance(type_id, instance.clone());
+            }
+
+            Scope::Module => {
+                self.store_instance(type_id, instance.clone());
+            }
+
+            Scope::Transient => unreachable!(),
+        }
+
+        Ok(typed)
+    }
+
+    pub fn resolve<T: ?Sized + 'static>(&self) -> Shared<T> {
+        self.try_resolve::<T>().unwrap()
+    }
+
+    pub fn optional_resolve<T: ?Sized + 'static>(&self) -> Option<Shared<T>> {
+        self.try_resolve::<T>().ok()
+    }
+}
+
+#[cfg(feature = "thread-safe")]
+impl Injector {
+    pub fn try_resolve<T: ?Sized + ThreadSafe + 'static>(&self) -> Result<Shared<T>, Error> {
+        let type_id = TypeId::of::<T>();
+        let type_name = std::any::type_name::<T>();
+
+        let _guard = ResolveGuard::push(type_id)?;
+
+        if let Some(instance) = self.get_instance(type_id) {
+            return instance
+                .downcast_ref::<Instance<T>>()
+                .ok_or_else(|| Error::type_mismatch(type_name))
+                .map(|instance| instance.value.clone());
+        }
+
+        let provider = self
+            .get_provider(type_id)
+            .ok_or_else(|| Error::service_not_provided(type_name))?;
+
+        if provider.scope == Scope::Transient {
+            let instance = Instance::new((provider.factory)(self)).as_any();
+            return instance
+                .downcast_ref::<Instance<T>>()
+                .ok_or_else(|| Error::type_mismatch(type_name))
+                .map(|instance| instance.value.clone());
+        }
+
+        let instance = Instance::new((provider.factory)(self)).as_any();
+        let typed = instance
+            .downcast_ref::<Instance<T>>()
+            .ok_or_else(|| Error::type_mismatch(type_name))
+            .map(|instance| instance.value.clone())?;
+
+        match provider.scope {
+            Scope::Root => {
+                let root = self.root_injector();
+                root.store_instance(type_id, instance.clone());
+            }
+
+            Scope::Module => {
+                self.store_instance(type_id, instance.clone());
+            }
+
+            Scope::Transient => unreachable!(),
+        }
+
+        Ok(typed)
+    }
+
+    pub fn resolve<T: ?Sized + ThreadSafe + 'static>(&self) -> Shared<T> {
+        self.try_resolve::<T>().unwrap()
+    }
+
+    pub fn optional_resolve<T: ?Sized + ThreadSafe + 'static>(&self) -> Option<Shared<T>> {
+        self.try_resolve::<T>().ok()
     }
 }
