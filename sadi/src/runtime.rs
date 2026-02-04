@@ -21,10 +21,7 @@
 //! ```
 
 #[cfg(feature = "thread-safe")]
-use std::{
-    any::Any,
-    sync::{Arc, RwLock},
-};
+use std::sync::{Arc, RwLock};
 
 #[cfg(not(feature = "thread-safe"))]
 use std::{cell::RefCell, rc::Rc};
@@ -83,9 +80,6 @@ pub type Shared<T> = Rc<T>;
 pub type Store<T> = RwLock<T>;
 #[cfg(not(feature = "thread-safe"))]
 pub type Store<T> = RefCell<T>;
-
-#[cfg(feature = "thread-safe")]
-pub trait ThreadSafe: Any + Send + Sync {}
 
 #[cfg(test)]
 mod tests {
