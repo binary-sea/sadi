@@ -1,25 +1,22 @@
-use std::any::Any;
+use crate::Shared;
 
-use crate::runtime::Shared;
-
+#[cfg_attr(feature = "debug", derive(Debug))]
 pub struct Instance<T: ?Sized + 'static> {
-    pub value: Shared<T>,
+    value: Shared<T>,
 }
+
 
 impl<T: ?Sized + 'static> Instance<T> {
     pub fn new(value: Shared<T>) -> Self {
         Self { value }
     }
 
-    pub fn as_any(self) -> Shared<dyn Any + 'static> {
-        Shared::new(self)
+    pub fn get(&self) -> &T {
+        &*self.value
+    }
+
+    pub fn value(&self) -> Shared<T> {
+        self.value.clone()
     }
 }
 
-impl<T: ?Sized + 'static> Clone for Instance<T> {
-    fn clone(&self) -> Self {
-        Self {
-            value: self.value.clone(),
-        }
-    }
-}
