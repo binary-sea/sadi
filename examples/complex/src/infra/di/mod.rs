@@ -1,5 +1,3 @@
-use std::any::TypeId;
-
 use sadi::{Application, Module, Provider, Shared};
 
 use crate::infra::persistence::sqlite::SqliteClient;
@@ -27,16 +25,6 @@ pub fn build() -> Result<Application, String> {
         let client = SqliteClient::new().expect("Failed to load sqlite client");
         Shared::new(client)
     }));
-
-    println!(
-        "Is sqlite client migrated? {}",
-        app.injector().resolve::<SqliteClient>().is_migrated()
-    );
-
-    println!(
-        "TypeDI?  {:?}",
-        TypeId::of::<SqliteClient>()
-    );
 
     Ok(app)
 }
