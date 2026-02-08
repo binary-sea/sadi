@@ -21,10 +21,18 @@ impl Module for RootModule {
 pub fn build() -> Result<Application, String> {
     let app = Application::new(RootModule);
 
+    // Register SqliteClient first
     app.injector().provide::<SqliteClient>(Provider::root(|_| {
         let client = SqliteClient::new().expect("Failed to load sqlite client");
         Shared::new(client)
     }));
+
+    // Manually call providers from imported modules
+    let repositories_module = RepositoriesModule;
+    repositories_module.providers(&app.injector());
+    
+    let use_cases_module = UseCasesModule;
+    use_cases_module.providers(&app.injector());
 
     Ok(app)
 }
