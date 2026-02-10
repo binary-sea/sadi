@@ -15,7 +15,9 @@ changelog = "CHANGELOG.md"
 [release]
 pre-release-replacements = [
     { file = "README.md", search = "sadi = \".*", replace = "{{crate_name}} = \"{{version}}\"" },
-    { file = "README.md", search = "sadi = {.*", replace = "{{crate_name}} = { version = \"{{version}}\", features = [\"tracing\"] }" },
+    { file = "README.md", search = "sadi = {.*", replace = "{{crate_name}} = { version = \"{{version}}\", features = [\"tracing\", \"debug\", \"thread-safe\"] }" },
+    { file = "sadi/README.md", search = "sadi = \".*", replace = "{{crate_name}} = \"{{version}}\"" },
+    { file = "sadi/README.md", search = "sadi = {.*", replace = "{{crate_name}} = { version = \"{{version}}\", features = [\"tracing\", \"debug\", \"thread-safe\"] }" },
     { file = "CHANGELOG.md", search = "Unreleased", replace = "{{version}}" },
     { file = "CHANGELOG.md", search = "ReleaseDate", replace = "{{date}}" },
 ]

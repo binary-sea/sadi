@@ -3,7 +3,7 @@
 [![Crates.io](https://img.shields.io/crates/v/sadi.svg)](https://crates.io/crates/sadi)
 [![Documentation](https://docs.rs/sadi/badge.svg)](https://docs.rs/sadi)
 [![License](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
-[![Build Status](https://github.com/JoaoPedro61/sadi/actions/workflows/CI.yml/badge.svg)](https://github.com/JoaoPedro61/sadi/actions/workflows/CI.yml)
+[![Build Status](https://github.com/binary-sea/sadi/actions/workflows/CI.yml/badge.svg)](https://github.com/binary-sea/sadi/actions/workflows/CI.yml)
 
 A lightweight, type-safe dependency injection container for Rust applications. SaDi provides ergonomic service registration (including trait-object bindings), transient and singleton lifetimes, semi-automatic dependency resolution, and circular dependency detection.
 
@@ -11,11 +11,14 @@ A lightweight, type-safe dependency injection container for Rust applications. S
 
 - 🔒 **Type-Safe**: Leverages Rust's type system for compile-time safety
 - 🔄 **Transient Services**: Create new instances on each request
-- 🔗 **Singleton Services**: Shared instances with reference counting
+- 🔗 **Singleton Services**: Shared instances with reference counting via `Arc` / `Rc`
 - 🔍 **Circular Detection**: Prevents infinite loops in dependency graphs
 - ❌ **Error Handling**: Comprehensive error types with detailed messages
 - 📊 **Optional Logging**: Tracing integration with feature gates
 - 🚀 **Zero-Cost Abstractions**: Feature gates enable compile-time optimization
+- 🧵 **Thread-Safe by Default**: Uses `Arc` + `RwLock` for concurrent access
+- 📦 **Module System**: Organize services into reusable modules
+- 🏗️ **Enterprise Ready**: Supports layered architecture, repository pattern, and use cases
 
 ## 📦 Installation
 
@@ -23,16 +26,22 @@ Add this to your `Cargo.toml`:
 
 ```toml
 [dependencies]
-sadi = "0.2.1"
+sadi = { path = "../sadi" }  # For local development
+```
+
+Or from crates.io (when published):
+
+```toml
+[dependencies]
+sadi = "1.0.0"
 ```
 
 ## 🚀 Quick Start
 
 ```rust
-use sadi::{container, bind, Container, Shared};
-use std::rc::Rc;
+use sadi::{Injector, Provider, Shared, Module, Application};
 
-// Define your services (non-thread-safe default uses `Rc` via `Shared`)
+// Define your services
 struct DatabaseService {
     connection_string: String,
 }
@@ -63,60 +72,180 @@ impl UserService {
     }
 }
 
+struct RootModule;
+
+impl Module for RootModule {
+    fn providers(&self, injector: &sadi::Injector) {
+         // Register DatabaseService as singleton
+        injector.provide::<DatabaseService>(Provider::root(|_| {
+            Shared::new(DatabaseService::new())
+        }));
+        
+        // Register UserService with DatabaseService dependency
+        injector.provide::<UserService>(Provider::root(|inj| {
+            let db = inj.resolve::<DatabaseService>();
+            UserService::new(db).into()
+        }));
+    }
+}
+
 fn main() {
-    // Use the `container!` macro to register bindings ergonomically
-    let container = container! {
-        bind(singleton DatabaseService => |_| DatabaseService::new())
-        bind(UserService => |c| UserService::new(c.resolve::<DatabaseService>().unwrap()))
-    };
+    // Create an application and register services
+    let mut app = Application::new(RootModule);
+
+    app.bootstrap();
 
     // Resolve and use services
-    let user_service = container.resolve::<UserService>().unwrap();
-    println!("{}", user_service.create_user("Alice"));
+    match app.injector().try_resolve::<UserService>() {
+        Ok(user_service) => println!("{}", user_service.create_user("Alice")),
+        Err(e) => eprintln!("Service resolution failed: {}", e),
+    }
+
+    // or just
+    app.injector().resolve::<UserService>(); // This panics if not registered
 }
 ```
 
-## 📖 Usage Guide
+## � Examples
+
+SaDi includes three comprehensive examples showcasing different use cases and patterns:
+
+### 1. Basic Example
+**Location:** `examples/basic/`
+
+A simple introduction to SaDi fundamentals:
+- Service registration with `Injector` and `Provider`
+- Transient and singleton lifetimes
+- Basic dependency resolution with `try_resolve()`
+- Error handling with `Result` types
+
+**Run:**
+```bash
+cargo run --example basic
+```
+
+### 2. Complex Example (Advanced Patterns)
+**Location:** `examples/complex/`
+
+Demonstrates enterprise-grade architecture with:
+- **Domain Layer**: Clear entity definitions and repository interfaces
+- **Application Layer**: Use case pattern for business logic
+- **Infrastructure Layer**: SQLite persistence with concrete implementations
+- **Dependency Injection**: Multi-level service composition
+- **Module System**: Modular DI configuration with imported modules
+
+Architecture:
+```
+core/
+  ├── domain/       (User, Todo entities & repository traits)
+  └── application/  (CreateUserUseCase, GetAllTodoUseCase, etc.)
+infra/
+  ├── di/           (Modules & dependency registration)
+  └── persistence/  (SQLite repositories)
+```
+
+**Run:**
+```bash
+cd examples/complex
+cargo run
+```
+
+**Run Tests:**
+```bash
+cd examples/complex
+./test.sh
+```
+
+### 3. Axum REST API Example
+**Location:** `examples/axum/`
+
+Real-world REST API integration with **Axum** web framework:
+- HTTP handler functions with DI-resolved dependencies
+- Structured JSON responses with error handling
+- CRUD endpoints for Users and Todos
+- Service state management via Axum's `State` extractor
+- Dependency resolution per-request
+
+**Features:**
+- `POST /users` - Create user
+- `GET /users` - List all users
+- `GET /users/{id}` - Get user by ID
+- `DELETE /users/{id}` - Delete user
+- `POST /todos` - Create todo
+- `GET /todos` - List all todos
+- `PUT /todos/{id}/status` - Update todo status
+- `DELETE /todos/{id}` - Delete todo
+
+**Run:**
+```bash
+# Terminal 1: Start server
+cd examples/axum
+cargo run
+
+# Terminal 2: Run comprehensive test suite
+cd examples/axum
+./test.sh
+```
+
+The test suite includes:
+- Server health checks
+- Sequential dependency extraction between requests
+- HTTP status code validation
+- JSON response parsing and assertion
+
+## �📖 Usage Guide
 
 ### Service Registration
 
 #### Transient Services
-Create new instances on each request. The default `bind` registration is transient:
+Create new instances on each request:
 
 ```rust
-use sadi::{container, bind};
+use sadi::{Injector, Provider, Shared};
 use uuid::Uuid;
 
 struct LoggerService {
     session_id: String,
 }
 
-let c = container! {
-    bind(LoggerService => |_| LoggerService { session_id: Uuid::new_v4().to_string() })
-};
+let injector = Injector::new();
 
-let logger1 = c.resolve::<LoggerService>().unwrap();
-let logger2 = c.resolve::<LoggerService>().unwrap();
+// Transient: new instance each time (default behavior)
+injector.provide::<LoggerService>(Provider::transient(|_| {
+    Shared::new(LoggerService { 
+        session_id: Uuid::new_v4().to_string() 
+    })
+}));
+
+let logger1 = injector.resolve::<LoggerService>();
+let logger2 = injector.resolve::<LoggerService>();
+// logger1 and logger2 are different instances
 ```
 
 #### Singleton Services
-Create once and share across all dependents. Use the `singleton` annotation in `bind`:
+Create once and share across all dependents:
 
 ```rust
-use sadi::{container, bind, Shared};
+use sadi::{Injector, Provider, Shared};
 
 struct ConfigService {
     app_name: String,
     debug: bool,
 }
 
-let c = container! {
-    bind(singleton ConfigService => |_| ConfigService { app_name: "MyApp".to_string(), debug: true })
-};
+let injector = Injector::new();
 
-let config1 = c.resolve::<ConfigService>().unwrap();
-let config2 = c.resolve::<ConfigService>().unwrap();
-assert!(Shared::ptr_eq(&config1, &config2));
+// Singleton: same instance every time
+injector.provide::<ConfigService>(Provider::root(|_| {
+    Shared::new(ConfigService { 
+        app_name: "MyApp".to_string(), 
+        debug: true 
+    })
+}));
+
+let config1 = injector.resolve::<ConfigService>();
+let config2 = injector.resolve::<ConfigService>();
+// config1 and config2 point to the same instance
 ```
 
 ### Error Handling
@@ -124,22 +253,19 @@ assert!(Shared::ptr_eq(&config1, &config2));
 SaDi provides both panicking and non-panicking variants:
 
 ```rust
-use sadi::{Container, Error};
+use sadi::{Injector, Provider, Shared, Error};
 
-let c = Container::new();
-c.bind_concrete::<String, String, _>(|_| "Hello".to_string()).unwrap();
+let injector = Injector::new();
+injector.provide::<String>(Provider::new(|_| Shared::new("Hello".to_string())));
 
-// Resolve (panicking)
-let service = c.resolve::<String>().unwrap();
-
-// Non-panicking
-match c.resolve::<String>() {
+// Non-panicking (try_resolve returns Result)
+match injector.try_resolve::<String>() {
     Ok(s) => println!("Got: {}", s),
     Err(e) => println!("Error: {}", e),
 }
 
 // Trying to resolve an unregistered type
-match c.resolve::<u32>() {
+match injector.try_resolve::<u32>() {
     Ok(_) => unreachable!(),
     Err(e) => println!("Expected error: {}", e),
 }
@@ -147,10 +273,10 @@ match c.resolve::<u32>() {
 
 ### Dependency Injection
 
-Services can depend on other services. Use the `container!` macro to register bindings concisely:
+Services can depend on other services. Use module-based registration for clean organization:
 
 ```rust
-use sadi::{container, bind, Shared};
+use sadi::{Injector, Module, Provider, Shared};
 
 struct DatabaseService { /* ... */ }
 impl DatabaseService { fn new() -> Self { DatabaseService {} } }
@@ -169,33 +295,57 @@ impl UserRepository {
     }
 }
 
-let c = container! {
-    bind(singleton DatabaseService => |_| DatabaseService::new())
-    bind(singleton CacheService => |_| CacheService::new())
-    bind(UserRepository => |c| UserRepository::new(c.resolve::<DatabaseService>().unwrap(), c.resolve::<CacheService>().unwrap()))
-};
+// Define a module for persistence services
+struct PersistenceModule;
 
-let repo = c.resolve::<UserRepository>().unwrap();
+impl Module for PersistenceModule {
+    fn providers(&self, injector: &Injector) {
+        injector.provide::<DatabaseService>(Provider::root(|_| {
+            Shared::new(DatabaseService::new())
+        }));
+        
+        injector.provide::<CacheService>(Provider::root(|_| {
+            Shared::new(CacheService::new())
+        }));
+        
+        injector.provide::<UserRepository>(Provider::root(|inj| {
+            let db = inj.resolve::<DatabaseService>();
+            let cache = inj.resolve::<CacheService>();
+            UserRepository::new(db, cache).into()
+        }));
+    }
+}
+
+let injector = Injector::new();
+let module = PersistenceModule;
+module.providers(&injector);
+
+let repo = injector.resolve::<UserRepository>();
 ```
 
 ## 🔍 Advanced Features
 
 ### Circular Dependency Detection
 
-SaDi automatically detects and prevents circular dependencies:
+SaDi automatically detects and prevents circular dependencies by tracking resolution paths:
 
 ```rust
-use sadi::Container;
+use sadi::{Injector, Provider, Shared};
 
-// Example: registering circular dependencies will produce a descriptive error at runtime
-let c = Container::new();
-// c.bind_concrete::<ServiceA, ServiceA, _>(|c| { let _ = c.resolve::<ServiceB>(); ServiceA });
-// c.bind_concrete::<ServiceB, ServiceB, _>(|c| { let _ = c.resolve::<ServiceA>(); ServiceB });
-
-match c.resolve::<ServiceA>() {
-    Ok(_) => println!("unexpected"),
-    Err(e) => println!("Circular dependency detected: {}", e),
+// Example: attempting to create circular dependencies will fail
+struct ServiceA {
+    b: Shared<ServiceB>,
 }
+
+struct ServiceB {
+    a: Shared<ServiceA>,
+}
+
+let injector = Injector::new();
+
+// These registrations will create a circular dependency
+// Attempting to resolve either service will result in an error
+// Error: "Circular dependency detected in resolution path"
 ```
 
 ### Tracing Integration
@@ -204,29 +354,41 @@ Enable the `tracing` feature for automatic logging (the crate's `default` featur
 
 ```toml
 [dependencies]
-sadi = { version = "0.2.1", features = ["tracing"] }
+sadi = { path = "../sadi", features = ["tracing"] }
 ```
 
 ```rust
-use sadi::{container, bind};
+use sadi::{Application, Module, Provider, Shared};
 use tracing::info;
+
+struct MyModule;
+
+impl Module for MyModule {
+    fn providers(&self, injector: &sadi::Injector) {
+        injector.provide::<DatabaseService>(Provider::root(|_| {
+            info!("Registering DatabaseService");
+            Shared::new(DatabaseService::new())
+        }));
+    }
+}
 
 #[tokio::main]
 async fn main() {
     tracing_subscriber::fmt::init();
 
-    let c = container! {
-        bind(singleton DatabaseService => |_| DatabaseService::new())
-    };
-
-    // resolving singletons or other services will be trace-logged when tracing feature is enabled
-    let _db = c.resolve::<DatabaseService>().unwrap();
+    let mut app = Application::new(MyModule);
+    app.bootstrap();
+    
+    // Resolving services will be traced when tracing feature is enabled
+    let _db = app.injector().try_resolve::<DatabaseService>();
 }
 ```
 
 ## 🧪 Testing
 
-Run the test suite:
+### Unit Tests
+
+Run the crate test suite:
 
 ```bash
 # Run all tests for the workspace
@@ -240,20 +402,27 @@ cargo test --features tracing
 
 # Run documentation tests
 cargo test --doc -p sadi
-
-# Run example
-cargo run --example basic
 ```
 
 ## 📁 Project Structure
 
 ```
 sadi/
-├── sadi/               # library crate
-│   └── src/            # core implementation (container, macros, types)
+├── sadi/                 # SaDi library crate
+│   ├── src/              # core implementation (container, macros, types)
+│   └── README.md         # This file
 ├── examples/
-│   └── basic/          # Comprehensive usage example
-└── README.md           # This file
+│   ├── basic/            # Basic usage example with simple DI
+│   ├── complex/          # Advanced DI patterns with SQLite, repositories, use cases
+│   │   ├── src/
+│   │   │   ├── core/     # Domain (entities, use cases)
+│   │   │   └── infra/    # Infrastructure (persistence, DI configuration)
+│   │   └── test.sh       # Test script for complex example
+│   └── axum/             # REST API with Axum web framework
+│       ├── src/
+│       │   └── main.rs   # HTTP handlers with DI integration
+│       └── test.sh       # Comprehensive API test suite
+└── README.md
 ```
 
 ## 🔧 Configuration
@@ -287,7 +456,7 @@ Contributions are welcome! Please feel free to submit a Pull Request. For major 
 
 1. Clone the repository:
 ```bash
-git clone https://github.com/JoaoPedro61/sadi.git
+git clone https://github.com/binary-sea/sadi.git
 cd sadi
 ```
 
@@ -321,10 +490,17 @@ cargo clippy -- -D warnings
 ### 📦 Ecosystem Integration
 - [ ] **Async Factory Support**: Enable async/await in factory functions for Tokio/async-std runtimes
 - [ ] **Actix-web Integration**: Extension trait and extractors for Actix-web framework
-- [ ] **Axum Integration**: Layer and extractor support for Axum web framework
+- [x] **Axum Integration**: Demonstrated with REST API example and state management
+  - [ ] Create a plugin to automatically resolve dependency
 - [ ] **Rocket Integration**: Layer and extractor support for Rocket web framework
 
-### 🛠️ Developer Experience
+### �️ Architectural Patterns
+- [x] **Repository Pattern**: Demonstrated in complex example with SQLite repositories
+- [x] **Layered Architecture**: Clean separation of domain, application, and infrastructure layers
+- [x] **Use Case Pattern**: Business logic encapsulated in use cases with DI
+- [x] **Web Framework Integration**: Explored with Axum web framework
+
+### �🛠️ Developer Experience
 - [ ] **Derive Macros**: Auto-generate factory functions from service structs (`#[injectable]`)
 - [ ] **Error Suggestions**: Better error messages with fix suggestions
 
@@ -337,7 +513,7 @@ cargo clippy -- -D warnings
 
 ## 📄 License
 
-This project is licensed under the MIT License - see the [LICENSE](https://github.com/JoaoPedro61/sadi/blob/main/LICENSE) file for details.
+This project is licensed under the MIT License - see the [LICENSE](https://github.com/binary-sea/sadi/blob/main/LICENSE) file for details.
 
 ## 🙏 Acknowledgments
 
@@ -347,4 +523,6 @@ This project is licensed under the MIT License - see the [LICENSE](https://githu
 
 ---
 
-**Made with ❤️ by [João Pedro Martins](https://github.com/JoaoPedro61)**
+**SaDi** - A semi-automatic dependency injection container for Rust  
+**Repository:** [binary-sea/sadi](https://github.com/binary-sea/sadi)  
+**Made with ❤️ by the Binary Sea Team**
