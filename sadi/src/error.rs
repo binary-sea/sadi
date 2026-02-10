@@ -31,7 +31,6 @@ use core::fmt;
 #[cfg(feature = "tracing")]
 use tracing::error;
 
-
 /// Error categories for the container.
 ///
 /// These variants are intentionally coarse-grained to keep error handling

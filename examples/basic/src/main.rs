@@ -127,8 +127,7 @@ fn main() {
 
     // Register singleton Config
     injector
-        .try_provide::<Config>(Provider::singleton(|_injector| Shared::new(Config::new()))
-)
+        .try_provide::<Config>(Provider::singleton(|_injector| Shared::new(Config::new())))
         .expect("failed to register Config");
 
     // Register singleton Logger with Config dependency
@@ -163,7 +162,9 @@ fn main() {
 
     // Register transient RequestHandler
     injector
-        .try_provide::<RequestHandler>(Provider::transient(|_injector| Shared::new(RequestHandler::new())))
+        .try_provide::<RequestHandler>(Provider::transient(|_injector| {
+            Shared::new(RequestHandler::new())
+        }))
         .expect("failed to register RequestHandler");
 
     println!("✓ All services registered!\n");
@@ -297,14 +298,8 @@ fn main() {
         "Config instances same: {}",
         Shared::ptr_eq(&config1, &config3)
     );
-    println!(
-        "Database instances same: {}",
-        Shared::ptr_eq(&db1, &db3)
-    );
-    println!(
-        "Cache instances same: {}",
-        Shared::ptr_eq(&cache1, &cache2)
-    );
+    println!("Database instances same: {}", Shared::ptr_eq(&db1, &db3));
+    println!("Cache instances same: {}", Shared::ptr_eq(&cache1, &cache2));
     println!();
 
     // ────────────────────────────────────────────────────────────

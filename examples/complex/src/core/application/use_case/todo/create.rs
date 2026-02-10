@@ -11,9 +11,16 @@ impl CreateTodoUseCase {
         Self { todo_repository }
     }
 
-    pub async fn execute(&self, user_id: u32, title: String, description: String) -> Result<Todo, String> {
+    pub async fn execute(
+        &self,
+        user_id: u32,
+        title: String,
+        description: String,
+    ) -> Result<Todo, String> {
         // Business logic can be added here (e.g., validation, logging, etc.)
         // For simplicity, we directly call the repository to create the todo.
-        self.todo_repository.create(user_id, title, description).await
+        self.todo_repository
+            .create(user_id, title, description)
+            .await
     }
 }

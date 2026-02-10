@@ -93,7 +93,8 @@ impl UserRepository for UserSqliteRepository {
         let mut stmt = connection
             .prepare(query)
             .map_err(|e| format!("Failed to get last insert id: {}", e))?;
-        stmt.next().map_err(|e| format!("Failed to get last insert id: {}", e))?;
+        stmt.next()
+            .map_err(|e| format!("Failed to get last insert id: {}", e))?;
         let id = stmt.read::<i64, _>(0).map_err(|e| e.to_string())? as u32;
 
         Ok(User { id, name, email })
