@@ -49,7 +49,6 @@
 //!
 //! ```
 //! use sadi::{Instance, Shared};
-//! use std::sync::Arc;
 //!
 //! trait Logger {
 //!     fn log(&self, message: &str);
@@ -62,7 +61,7 @@
 //!     }
 //! }
 //!
-//! let logger: Arc<dyn Logger> = Arc::new(ConsoleLogger);
+//! let logger: Shared<dyn Logger> = Shared::new(ConsoleLogger);
 //! let instance = Instance::<dyn Logger>::new(logger);
 //!
 //! instance.get().log("Hello, world!");
@@ -166,13 +165,12 @@ impl<T: ?Sized + 'static> Instance<T> {
     ///
     /// ```
     /// use sadi::{Instance, Shared};
-    /// use std::sync::Arc;
     ///
     /// trait Repository {}
     /// struct UserRepository;
     /// impl Repository for UserRepository {}
     ///
-    /// let repo: Arc<dyn Repository> = Arc::new(UserRepository);
+    /// let repo: Shared<dyn Repository> = Shared::new(UserRepository);
     /// let instance = Instance::<dyn Repository>::new(repo);
     /// ```
     pub fn new(value: Shared<T>) -> Self {
@@ -238,7 +236,6 @@ impl<T: ?Sized + 'static> Instance<T> {
     ///
     /// ```
     /// use sadi::{Instance, Shared};
-    /// use std::sync::Arc;
     ///
     /// trait Greeter {
     ///     fn greet(&self) -> String;
@@ -251,7 +248,7 @@ impl<T: ?Sized + 'static> Instance<T> {
     ///     }
     /// }
     ///
-    /// let greeter: Arc<dyn Greeter> = Arc::new(EnglishGreeter);
+    /// let greeter: Shared<dyn Greeter> = Shared::new(EnglishGreeter);
     /// let instance = Instance::<dyn Greeter>::new(greeter);
     ///
     /// assert_eq!(instance.get().greet(), "Hello!");

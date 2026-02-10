@@ -14,12 +14,10 @@ impl Module for RootModule {
     fn imports(&self) -> Vec<Box<dyn Module>> {
         vec![Box::new(RepositoriesModule), Box::new(UseCasesModule)]
     }
-
-    fn providers(&self, _: &sadi::Injector) {}
 }
 
 pub fn build() -> Result<Application, String> {
-    let app = Application::new(RootModule);
+    let mut app = Application::new(RootModule);
 
     // Register SqliteClient first
     app.injector().provide::<SqliteClient>(Provider::root(|_| {
@@ -27,12 +25,7 @@ pub fn build() -> Result<Application, String> {
         Shared::new(client)
     }));
 
-    // Manually call providers from imported modules
-    let repositories_module = RepositoriesModule;
-    repositories_module.providers(&app.injector());
-    
-    let use_cases_module = UseCasesModule;
-    use_cases_module.providers(&app.injector());
+    app.bootstrap();
 
     Ok(app)
 }

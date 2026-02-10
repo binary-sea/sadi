@@ -157,7 +157,7 @@ pub trait Module {
     ///     }
     /// }
     /// ```
-    fn providers(&self, injector: &Injector);
+    fn providers(&self, _injector: &Injector) {}
 }
 
 #[cfg(test)]

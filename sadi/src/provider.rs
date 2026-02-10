@@ -37,14 +37,13 @@
 //!
 //! ```
 //! use sadi::{Provider, Shared};
-//! use std::sync::Arc;
 //!
 //! trait Logger {}
 //! struct ConsoleLogger;
 //! impl Logger for ConsoleLogger {}
 //!
 //! let provider = Provider::<dyn Logger>::singleton(|_| {
-//!     Arc::new(ConsoleLogger) as Arc<dyn Logger>
+//!     Shared::new(ConsoleLogger) as Shared<dyn Logger>
 //! });
 //! ```
 
@@ -556,7 +555,7 @@ mod tests {
 
     #[derive(Debug)]
     struct PostgresRepository {
-        connection_string: String,
+        _connection_string: String,
     }
 
     impl Repository for PostgresRepository {}
@@ -617,7 +616,7 @@ mod tests {
     fn test_singleton_provider_with_trait_object() {
         let provider = Provider::<dyn Repository>::singleton(|_| {
             Shared::new(PostgresRepository {
-                connection_string: "postgresql://localhost".to_string(),
+                _connection_string: "postgresql://localhost".to_string(),
             }) as Shared<dyn Repository>
         });
 
@@ -673,7 +672,7 @@ mod tests {
         let provider = Provider::<dyn Repository>::transient(move |_| {
             let id = counter_clone.increment();
             Shared::new(PostgresRepository {
-                connection_string: format!("postgresql://localhost/{}", id),
+                _connection_string: format!("postgresql://localhost/{}", id),
             }) as Shared<dyn Repository>
         });
 

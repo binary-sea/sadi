@@ -223,6 +223,15 @@ impl Application {
         #[cfg(feature = "tracing")]
         debug!("Accessing root injector");
 
+        #[cfg(feature = "tracing")]
+        {
+            if self.is_bootstrapped() {
+                debug!("Injector is available and application is bootstrapped");
+            } else {
+                debug!("Injector is available but application is not bootstrapped yet");
+            }
+        }
+
         self.injector.clone()
     }
 
@@ -256,7 +265,7 @@ impl Application {
     /// ```
     pub fn is_bootstrapped(&self) -> bool {
         let bootstrapped = self.root.is_none();
-        
+
         #[cfg(feature = "tracing")]
         debug!("Checking application bootstrap state: {}", bootstrapped);
 

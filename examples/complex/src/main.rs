@@ -9,6 +9,8 @@ pub mod infra;
 
 #[tokio::main]
 async fn main() -> Result<(), String> {
+    tracing_subscriber::fmt::init();
+    
     println!("=== Complex Example: DI with SQLite Repositories ===\n");
 
     // Build the application with dependency injection

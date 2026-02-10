@@ -96,19 +96,14 @@ impl Injector {
     where
         T: ?Sized + 'static,
     {
-        let type_id = TypeId::of::<T>();
-        let type_name = std::any::type_name::<T>();
+        match provider.scope {
+            Scope::Root => {
+                let root = self.root_injector();
+                root.store_provider::<T>(provider)
+            }
 
-        let mut providers = self.inner.providers.borrow_mut();
-        if providers.contains_key(&type_id) {
-            return Err(Error::provider_already_registered(
-                type_name,
-                provider.scope.to_string().as_str(),
-            ));
+            Scope::Module | Scope::Transient => self.store_provider::<T>(provider),
         }
-        providers.insert(type_id, Shared::new(provider));
-
-        Ok(())
     }
 
     pub fn provide<T>(&self, provider: Provider<T>) -> &Self
@@ -174,6 +169,25 @@ impl Injector {
         let type_id = TypeId::of::<T>();
 
         self.inner.instances.borrow_mut().insert(type_id, instance);
+    }
+
+    pub(crate) fn store_provider<T>(&self, provider: Provider<T>) -> Result<(), Error>
+    where
+        T: ?Sized + 'static,
+    {
+        let type_id = TypeId::of::<T>();
+        let type_name = std::any::type_name::<T>();
+
+        let mut providers = self.inner.providers.borrow_mut();
+        if providers.contains_key(&type_id) {
+            return Err(Error::provider_already_registered(
+                type_name,
+                provider.scope.to_string().as_str(),
+            ));
+        }
+        providers.insert(type_id, Shared::new(provider));
+
+        Ok(())
     }
 
     pub(crate) fn get_instance<T>(&self) -> Option<Shared<Instance<T>>>
@@ -255,19 +269,14 @@ impl Injector {
     where
         T: ?Sized + Send + Sync + 'static,
     {
-        let type_id = TypeId::of::<T>();
-        let type_name = std::any::type_name::<T>();
+        match provider.scope {
+            Scope::Root => {
+                let root = self.root_injector();
+                root.store_provider::<T>(provider)
+            }
 
-        let mut providers = self.inner.providers.write().unwrap();
-        if providers.contains_key(&type_id) {
-            return Err(Error::provider_already_registered(
-                type_name,
-                provider.scope.to_string().as_str(),
-            ));
+            Scope::Module | Scope::Transient => self.store_provider::<T>(provider),
         }
-        providers.insert(type_id, Shared::new(provider));
-
-        Ok(())
     }
 
     pub fn provide<T>(&self, provider: Provider<T>) -> &Self
@@ -337,6 +346,25 @@ impl Injector {
             .write()
             .unwrap()
             .insert(type_id, instance);
+    }
+
+    pub(crate) fn store_provider<T>(&self, provider: Provider<T>) -> Result<(), Error>
+    where
+        T: ?Sized + Send + Sync + 'static,
+    {
+        let type_id = TypeId::of::<T>();
+        let type_name = std::any::type_name::<T>();
+
+        let mut providers = self.inner.providers.write().unwrap();
+        if providers.contains_key(&type_id) {
+            return Err(Error::provider_already_registered(
+                type_name,
+                provider.scope.to_string().as_str(),
+            ));
+        }
+        providers.insert(type_id, Shared::new(provider));
+
+        Ok(())
     }
 
     pub(crate) fn get_instance<T>(&self) -> Option<Shared<Instance<T>>>
