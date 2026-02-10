@@ -21,22 +21,6 @@ checksum = "1505bd5d3d116872e7271a6d4e16d81d0c8570876c8de68093a09ac269d8aac0"
 
 [[package]]
 name = "axum"
-version = "0.2.2"
-dependencies = [
- "axum 0.8.8",
- "complex",
- "sadi",
- "serde",
- "serde_json",
- "tokio",
- "tower",
- "tower-http",
- "tracing",
- "tracing-subscriber",
-]
-
-[[package]]
-name = "axum"
 version = "0.8.8"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "8b52af3cb4058c895d37317bb27508dccc8e5f2d39454016b297bf4a400597b8"
@@ -69,6 +53,22 @@ dependencies = [
 ]
 
 [[package]]
+name = "axum"
+version = "1.0.0"
+dependencies = [
+ "axum 0.8.8",
+ "complex",
+ "sadi",
+ "serde",
+ "serde_json",
+ "tokio",
+ "tower",
+ "tower-http",
+ "tracing",
+ "tracing-subscriber",
+]
+
+[[package]]
 name = "axum-core"
 version = "0.5.6"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -89,7 +89,7 @@ dependencies = [
 
 [[package]]
 name = "basic"
-version = "0.2.2"
+version = "1.0.0"
 dependencies = [
  "sadi",
 ]
@@ -124,7 +124,7 @@ checksum = "9330f8b2ff13f34540b44e946ef35111825727b38d33286ef986142615121801"
 
 [[package]]
 name = "complex"
-version = "0.2.2"
+version = "1.0.0"
 dependencies = [
  "async-trait",
  "sadi",
@@ -381,7 +381,7 @@ checksum = "9774ba4a74de5f7b1c1451ed6cd5285a32eddb5cccb8cc655a4e50009e06477f"
 
 [[package]]
 name = "sadi"
-version = "0.2.2"
+version = "1.0.0"
 dependencies = [
  "tracing",
 ]
