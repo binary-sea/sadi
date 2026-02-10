@@ -3,7 +3,7 @@ use std::{any::TypeId, cell::RefCell};
 use crate::error::{Error, ErrorKind};
 
 thread_local! {
-    static RESOLVE_STACK: RefCell<Vec<TypeId>> = RefCell::new(Vec::new());
+    static RESOLVE_STACK: RefCell<Vec<TypeId>> = const { RefCell::new(Vec::new()) };
 }
 
 pub struct ResolveGuard {

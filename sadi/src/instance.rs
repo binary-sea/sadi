@@ -254,7 +254,7 @@ impl<T: ?Sized + 'static> Instance<T> {
     /// assert_eq!(instance.get().greet(), "Hello!");
     /// ```
     pub fn get(&self) -> &T {
-        &*self.value
+        &self.value
     }
 
     /// Returns a clone of the underlying `Shared<T>` reference.

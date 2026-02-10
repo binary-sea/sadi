@@ -114,7 +114,7 @@ mod tests {
     #[test]
     fn test_scope_is_clone() {
         let scope1 = Scope::Module;
-        let scope2 = scope1.clone();
+        let scope2 = scope1;
         assert!(scope1.is_singleton());
         assert!(scope2.is_singleton());
     }

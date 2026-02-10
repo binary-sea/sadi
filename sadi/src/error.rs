@@ -141,7 +141,7 @@ mod tests {
     #[test]
     fn service_not_provided_error() {
         let err = Error::service_not_provided("MyType");
-        assert_eq!(err.kind == ErrorKind::ServiceNotProvided, true);
+        assert!(err.kind == ErrorKind::ServiceNotProvided);
         assert!(err.message.contains("MyType"));
         assert!(err.message.contains("provider"));
     }
@@ -149,14 +149,14 @@ mod tests {
     #[test]
     fn type_mismatch_error() {
         let err = Error::type_mismatch("OtherType");
-        assert_eq!(err.kind == ErrorKind::TypeMismatch, true);
+        assert!(err.kind == ErrorKind::TypeMismatch);
         assert!(err.message.contains("OtherType"));
     }
 
     #[test]
     fn provider_already_registered_error() {
         let err = Error::provider_already_registered("Foo", "transient");
-        assert_eq!(err.kind == ErrorKind::ProviderAlreadyRegistered, true);
+        assert!(err.kind == ErrorKind::ProviderAlreadyRegistered);
         assert!(err.message.contains("Foo"));
         assert!(err.message.contains("transient"));
     }
@@ -165,7 +165,7 @@ mod tests {
     fn circular_dependency_error() {
         let chain = ["A", "B", "A"];
         let err = Error::circular_dependency(&chain);
-        assert_eq!(err.kind == ErrorKind::CircularDependency, true);
+        assert!(err.kind == ErrorKind::CircularDependency);
         assert!(err.message.contains("A -> B -> A"));
     }
 
@@ -182,7 +182,7 @@ mod tests {
     fn error_kind_equality() {
         let err1 = Error::type_mismatch("A");
         let err2 = Error::type_mismatch("B");
-        assert_eq!(err1.kind == err2.kind, true);
+        assert!(err1.kind == err2.kind);
         assert_ne!(err1.message, err2.message);
     }
 }
