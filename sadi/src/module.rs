@@ -10,6 +10,11 @@
 //! - Import other modules to compose functionality
 //! - Configure services within an injector
 //!
+//! # Thread Safety
+//!
+//! When the `thread-safe` feature is enabled, the [`Module`] trait requires implementors
+//! to be `Send + Sync`, allowing modules to be safely shared across threads.
+//!
 //! # Examples
 //!
 //! ```
@@ -24,7 +29,6 @@
 //!     }
 //! }
 //! ```
-
 use crate::injector::Injector;
 
 /// Trait for defining a module in the dependency injection system.
@@ -32,6 +36,12 @@ use crate::injector::Injector;
 /// A module encapsulates a set of providers and can import other modules to build
 /// a hierarchical dependency injection configuration. Modules are the primary way
 /// to organize and structure your application's services.
+///
+/// # Thread Safety
+///
+/// With the `thread-safe` feature enabled, modules must implement `Send + Sync` to
+/// ensure they can be safely shared across threads. Without this feature, modules
+/// have no additional thread-safety requirements.
 ///
 /// # Required Methods
 ///
@@ -94,7 +104,75 @@ use crate::injector::Injector;
 ///     }
 /// }
 /// ```
+#[cfg(not(feature = "thread-safe"))]
 pub trait Module {
+    /// Returns a list of modules that this module imports.
+    ///
+    /// Imported modules have their providers registered before this module's providers.
+    /// This allows a module to build upon functionality provided by other modules.
+    ///
+    /// # Default Implementation
+    ///
+    /// By default, returns an empty vector (no imports).
+    ///
+    /// # Returns
+    ///
+    /// A vector of boxed `Module` trait objects representing the imported modules.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use sadi::module::Module;
+    /// use sadi::injector::Injector;
+    ///
+    /// struct CoreModule;
+    /// impl Module for CoreModule {
+    ///     fn providers(&self, injector: &Injector) {}
+    /// }
+    ///
+    /// struct FeatureModule;
+    /// impl Module for FeatureModule {
+    ///     fn imports(&self) -> Vec<Box<dyn Module>> {
+    ///         vec![Box::new(CoreModule)]
+    ///     }
+    ///
+    ///     fn providers(&self, injector: &Injector) {}
+    /// }
+    /// ```
+    fn imports(&self) -> Vec<Box<dyn Module>> {
+        vec![]
+    }
+
+    /// Registers providers with the given injector.
+    ///
+    /// This method is called to configure the dependency injection container with
+    /// the services that this module provides. Use the injector to register
+    /// factories, values, and other providers.
+    ///
+    /// # Parameters
+    ///
+    /// - `injector`: The injector instance to register providers with
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use sadi::module::Module;
+    /// use sadi::injector::Injector;
+    ///
+    /// struct MyModule;
+    ///
+    /// impl Module for MyModule {
+    ///     fn providers(&self, injector: &Injector) {
+    ///         // Register providers here
+    ///         // injector.register<...>(...)
+    ///     }
+    /// }
+    /// ```
+    fn providers(&self, _injector: &Injector) {}
+}
+
+#[cfg(feature = "thread-safe")]
+pub trait Module: Send + Sync {
     /// Returns a list of modules that this module imports.
     ///
     /// Imported modules have their providers registered before this module's providers.
@@ -251,29 +329,62 @@ mod tests {
         }
     }
 
+    // Note: CountingModule uses RefCell which is not Send, so it's only available
+    // when thread-safe feature is disabled
+    #[cfg(not(feature = "thread-safe"))]
     struct CountingModule {
         call_count: std::cell::RefCell<usize>,
     }
 
+    #[cfg(not(feature = "thread-safe"))]
     impl Module for CountingModule {
         fn providers(&self, _injector: &Injector) {
             *self.call_count.borrow_mut() += 1;
         }
     }
 
+    #[cfg(feature = "thread-safe")]
+    struct CountingModule {
+        call_count: std::sync::Mutex<usize>,
+    }
+
+    #[cfg(feature = "thread-safe")]
+    impl Module for CountingModule {
+        fn providers(&self, _injector: &Injector) {
+            *self.call_count.lock().unwrap() += 1;
+        }
+    }
+
     #[test]
     fn test_providers_can_have_side_effects() {
+        #[cfg(not(feature = "thread-safe"))]
         let module = CountingModule {
             call_count: std::cell::RefCell::new(0),
         };
+
+        #[cfg(feature = "thread-safe")]
+        let module = CountingModule {
+            call_count: std::sync::Mutex::new(0),
+        };
+
         let injector = Injector::root();
 
-        assert_eq!(*module.call_count.borrow(), 0);
+        #[cfg(not(feature = "thread-safe"))]
+        {
+            assert_eq!(*module.call_count.borrow(), 0);
+            module.providers(&injector);
+            assert_eq!(*module.call_count.borrow(), 1);
+            module.providers(&injector);
+            assert_eq!(*module.call_count.borrow(), 2);
+        }
 
-        module.providers(&injector);
-        assert_eq!(*module.call_count.borrow(), 1);
-
-        module.providers(&injector);
-        assert_eq!(*module.call_count.borrow(), 2);
+        #[cfg(feature = "thread-safe")]
+        {
+            assert_eq!(*module.call_count.lock().unwrap(), 0);
+            module.providers(&injector);
+            assert_eq!(*module.call_count.lock().unwrap(), 1);
+            module.providers(&injector);
+            assert_eq!(*module.call_count.lock().unwrap(), 2);
+        }
     }
 }

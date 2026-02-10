@@ -33,7 +33,7 @@ Or from crates.io (when published):
 
 ```toml
 [dependencies]
-sadi = "1.0.0"
+sadi = "1.1.0"
 ```
 
 ## 🚀 Quick Start

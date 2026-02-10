@@ -11,6 +11,11 @@
 //! - Access to the root injector
 //! - Hierarchical module loading with proper isolation
 //!
+//! # Thread Safety
+//!
+//! When the `thread-safe` feature is enabled, the [`Application`] requires the root module
+//! to implement `Send + Sync`, allowing the application to be safely shared across threads.
+//!
 //! # Examples
 //!
 //! ```
@@ -46,6 +51,12 @@ use tracing::{debug, info};
 /// dependency injector. It handles the bootstrap process, which recursively loads
 /// all modules and their imports, creating a hierarchical injector structure.
 ///
+/// # Thread Safety
+///
+/// With the `thread-safe` feature enabled, the application requires modules to implement
+/// `Send + Sync` to ensure they can be safely shared across threads. Without this feature,
+/// modules have no additional thread-safety requirements.
+///
 /// # Lifecycle
 ///
 /// 1. **Creation**: Create an application with a root module using [`new()`](Application::new)
@@ -77,7 +88,10 @@ use tracing::{debug, info};
 /// // Use injector to get services
 /// ```
 pub struct Application {
+    #[cfg(not(feature = "thread-safe"))]
     root: Option<Box<dyn Module>>,
+    #[cfg(feature = "thread-safe")]
+    root: Option<Box<dyn Module + Send + Sync>>,
     injector: Shared<Injector>,
 }
 
@@ -318,8 +332,14 @@ impl Application {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[cfg(not(feature = "thread-safe"))]
     use std::cell::RefCell;
+    #[cfg(not(feature = "thread-safe"))]
     use std::rc::Rc;
+
+    #[cfg(feature = "thread-safe")]
+    use std::sync::{Arc, Mutex};
 
     struct EmptyModule;
 
@@ -327,20 +347,38 @@ mod tests {
         fn providers(&self, _injector: &Injector) {}
     }
 
+    // CountingModule with conditional thread safety
+    #[cfg(not(feature = "thread-safe"))]
     struct CountingModule {
         counter: Rc<RefCell<usize>>,
     }
 
+    #[cfg(not(feature = "thread-safe"))]
     impl Module for CountingModule {
         fn providers(&self, _injector: &Injector) {
             *self.counter.borrow_mut() += 1;
         }
     }
 
+    #[cfg(feature = "thread-safe")]
+    struct CountingModule {
+        counter: Arc<Mutex<usize>>,
+    }
+
+    #[cfg(feature = "thread-safe")]
+    impl Module for CountingModule {
+        fn providers(&self, _injector: &Injector) {
+            *self.counter.lock().unwrap() += 1;
+        }
+    }
+
+    // ModuleWithImports with conditional thread safety
+    #[cfg(not(feature = "thread-safe"))]
     struct ModuleWithImports {
         counter: Rc<RefCell<usize>>,
     }
 
+    #[cfg(not(feature = "thread-safe"))]
     impl Module for ModuleWithImports {
         fn imports(&self) -> Vec<Box<dyn Module>> {
             vec![
@@ -355,6 +393,29 @@ mod tests {
 
         fn providers(&self, _injector: &Injector) {
             *self.counter.borrow_mut() += 1;
+        }
+    }
+
+    #[cfg(feature = "thread-safe")]
+    struct ModuleWithImports {
+        counter: Arc<Mutex<usize>>,
+    }
+
+    #[cfg(feature = "thread-safe")]
+    impl Module for ModuleWithImports {
+        fn imports(&self) -> Vec<Box<dyn Module>> {
+            vec![
+                Box::new(CountingModule {
+                    counter: self.counter.clone(),
+                }),
+                Box::new(CountingModule {
+                    counter: self.counter.clone(),
+                }),
+            ]
+        }
+
+        fn providers(&self, _injector: &Injector) {
+            *self.counter.lock().unwrap() += 1;
         }
     }
 
@@ -405,17 +466,33 @@ mod tests {
 
     #[test]
     fn test_bootstrap_calls_module_providers() {
+        #[cfg(not(feature = "thread-safe"))]
         let counter = Rc::new(RefCell::new(0));
+        #[cfg(feature = "thread-safe")]
+        let counter = Arc::new(Mutex::new(0));
+
         let module = CountingModule {
             counter: counter.clone(),
         };
 
         let mut app = Application::new(module);
+
+        #[cfg(not(feature = "thread-safe"))]
         assert_eq!(*counter.borrow(), 0);
+        #[cfg(feature = "thread-safe")]
+        assert_eq!(*counter.lock().unwrap(), 0);
 
         app.bootstrap();
+
+        #[cfg(not(feature = "thread-safe"))]
         assert_eq!(
             *counter.borrow(),
+            1,
+            "Module providers should be called during bootstrap"
+        );
+        #[cfg(feature = "thread-safe")]
+        assert_eq!(
+            *counter.lock().unwrap(),
             1,
             "Module providers should be called during bootstrap"
         );
@@ -423,7 +500,11 @@ mod tests {
 
     #[test]
     fn test_bootstrap_loads_imports_first() {
+        #[cfg(not(feature = "thread-safe"))]
         let counter = Rc::new(RefCell::new(0));
+        #[cfg(feature = "thread-safe")]
+        let counter = Arc::new(Mutex::new(0));
+
         let module = ModuleWithImports {
             counter: counter.clone(),
         };
@@ -432,14 +513,23 @@ mod tests {
         app.bootstrap();
 
         // 2 imports + 1 root module = 3 calls
+        #[cfg(not(feature = "thread-safe"))]
         assert_eq!(*counter.borrow(), 3, "All modules should be loaded");
+        #[cfg(feature = "thread-safe")]
+        assert_eq!(*counter.lock().unwrap(), 3, "All modules should be loaded");
     }
 
     #[test]
     fn test_application_can_be_created_with_different_modules() {
         let _app1 = Application::new(EmptyModule);
+
+        #[cfg(not(feature = "thread-safe"))]
         let _app2 = Application::new(CountingModule {
             counter: Rc::new(RefCell::new(0)),
+        });
+        #[cfg(feature = "thread-safe")]
+        let _app2 = Application::new(CountingModule {
+            counter: Arc::new(Mutex::new(0)),
         });
 
         // Should compile and work with different module types
@@ -478,11 +568,14 @@ mod tests {
         );
     }
 
+    // NestedImportModule with conditional thread safety
+    #[cfg(not(feature = "thread-safe"))]
     struct NestedImportModule {
         counter: Rc<RefCell<usize>>,
         depth: usize,
     }
 
+    #[cfg(not(feature = "thread-safe"))]
     impl Module for NestedImportModule {
         fn imports(&self) -> Vec<Box<dyn Module>> {
             if self.depth > 0 {
@@ -500,9 +593,37 @@ mod tests {
         }
     }
 
+    #[cfg(feature = "thread-safe")]
+    struct NestedImportModule {
+        counter: Arc<Mutex<usize>>,
+        depth: usize,
+    }
+
+    #[cfg(feature = "thread-safe")]
+    impl Module for NestedImportModule {
+        fn imports(&self) -> Vec<Box<dyn Module>> {
+            if self.depth > 0 {
+                vec![Box::new(NestedImportModule {
+                    counter: self.counter.clone(),
+                    depth: self.depth - 1,
+                })]
+            } else {
+                vec![]
+            }
+        }
+
+        fn providers(&self, _injector: &Injector) {
+            *self.counter.lock().unwrap() += 1;
+        }
+    }
+
     #[test]
     fn test_deeply_nested_modules() {
+        #[cfg(not(feature = "thread-safe"))]
         let counter = Rc::new(RefCell::new(0));
+        #[cfg(feature = "thread-safe")]
+        let counter = Arc::new(Mutex::new(0));
+
         let module = NestedImportModule {
             counter: counter.clone(),
             depth: 5,
@@ -512,6 +633,13 @@ mod tests {
         app.bootstrap();
 
         // depth 5, 4, 3, 2, 1, 0 = 6 modules total
+        #[cfg(not(feature = "thread-safe"))]
         assert_eq!(*counter.borrow(), 6, "All nested modules should be loaded");
+        #[cfg(feature = "thread-safe")]
+        assert_eq!(
+            *counter.lock().unwrap(),
+            6,
+            "All nested modules should be loaded"
+        );
     }
 }

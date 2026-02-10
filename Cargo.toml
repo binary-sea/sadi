@@ -9,7 +9,7 @@ config = "spellcheck.toml"
 [workspace.package]
 version = "1.0.0"
 edition = "2024"
-repository = "https://github.com/JoaoPedro61/sadi"
-homepage = "https://github.com/JoaoPedro61/sadi"
+repository = "https://github.com/binary-sea/sadi"
+homepage = "https://github.com/binary-sea/sadi"
 license-file = "LICENSE"
 authors = ["João Pedro Martins <mjoaopedro61@gmail.com>"]

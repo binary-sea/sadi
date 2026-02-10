@@ -54,7 +54,11 @@ dependencies = [
 
 [[package]]
 name = "axum"
+<<<<<<< HEAD
 version = "1.0.0"
+=======
+version = "1.1.0"
+>>>>>>> 2b4702e (feat: improve and implement send + sync for the Module trait)
 dependencies = [
  "axum 0.8.8",
  "complex",
@@ -89,7 +93,11 @@ dependencies = [
 
 [[package]]
 name = "basic"
+<<<<<<< HEAD
 version = "1.0.0"
+=======
+version = "1.1.0"
+>>>>>>> 2b4702e (feat: improve and implement send + sync for the Module trait)
 dependencies = [
  "sadi",
 ]
@@ -124,7 +132,11 @@ checksum = "9330f8b2ff13f34540b44e946ef35111825727b38d33286ef986142615121801"
 
 [[package]]
 name = "complex"
+<<<<<<< HEAD
 version = "1.0.0"
+=======
+version = "1.1.0"
+>>>>>>> 2b4702e (feat: improve and implement send + sync for the Module trait)
 dependencies = [
  "async-trait",
  "sadi",
@@ -381,7 +393,11 @@ checksum = "9774ba4a74de5f7b1c1451ed6cd5285a32eddb5cccb8cc655a4e50009e06477f"
 
 [[package]]
 name = "sadi"
+<<<<<<< HEAD
 version = "1.0.0"
+=======
+version = "1.1.0"
+>>>>>>> 2b4702e (feat: improve and implement send + sync for the Module trait)
 dependencies = [
  "tracing",
 ]
