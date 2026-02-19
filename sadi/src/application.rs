@@ -38,8 +38,12 @@
 //! // Use injector to resolve dependencies
 //! ```
 
+use std::any::TypeId;
+use std::collections::HashMap;
+
 use crate::injector::Injector;
 use crate::module::Module;
+use crate::module_instance::ModuleInstance;
 use crate::runtime::Shared;
 
 #[cfg(feature = "tracing")]
@@ -93,6 +97,7 @@ pub struct Application {
     #[cfg(feature = "thread-safe")]
     root: Option<Box<dyn Module + Send + Sync>>,
     injector: Shared<Injector>,
+    modules: HashMap<TypeId, ModuleInstance>,
 }
 
 #[cfg(feature = "debug")]
@@ -101,6 +106,7 @@ impl std::fmt::Debug for Application {
         f.debug_struct("Application")
             .field("injector", &"...")
             .field("root", &"<dyn Module>")
+            .field("modules_count", &self.modules.len())
             .finish()
     }
 }
@@ -142,6 +148,7 @@ impl Application {
         Self {
             root: Some(Box::new(root)),
             injector: Shared::new(Injector::root()),
+            modules: HashMap::new(),
         }
     }
 
@@ -198,7 +205,7 @@ impl Application {
         #[cfg(feature = "tracing")]
         info!("Starting application bootstrap process");
 
-        Self::load_module(self.injector.clone(), root);
+        self.load_module(self.injector.clone(), root);
 
         #[cfg(feature = "tracing")]
         info!("Application bootstrap completed successfully");
@@ -249,6 +256,24 @@ impl Application {
         self.injector.clone()
     }
 
+    /// Returns the injector associated with a bootstrapped module type.
+    ///
+    /// This lookup is keyed by module concrete type (`T`). It returns `None` when:
+    /// - the application was not bootstrapped yet, or
+    /// - no module of type `T` exists in the loaded graph.
+    ///
+    /// # Note about duplicate module types
+    ///
+    /// If multiple instances of the same module type are imported, the first loaded
+    /// instance is kept in the registry for lookup.
+    pub fn module<T>(&self) -> Option<&Injector>
+    where
+        T: Module + 'static,
+    {
+        let type_id = TypeId::of::<T>();
+        self.modules.get(&type_id).map(|module| module.injector())
+    }
+
     /// Checks whether the application has been bootstrapped.
     ///
     /// Returns `true` if [`bootstrap()`](Application::bootstrap) has been called,
@@ -296,11 +321,21 @@ impl Application {
     ///
     /// - `parent`: The parent injector to create a child from
     /// - `module`: The module to load
-    fn load_module(parent: Shared<Injector>, module: Box<dyn Module>) {
+    fn load_module(&mut self, parent: Shared<Injector>, module: Box<dyn Module>) {
         #[cfg(feature = "tracing")]
         debug!("Loading module into injector hierarchy");
 
+        println!(
+            "Loading module: {:?} with id: {:?}",
+            module.type_name(),
+            module.type_id()
+        );
+
         let module_injector = Shared::new(Injector::child(parent.clone()));
+
+        self.modules
+            .entry(module.type_id())
+            .or_insert_with(|| ModuleInstance::new(module.as_ref(), module_injector.as_ref().clone()));
 
         #[cfg(feature = "tracing")]
         debug!("Created child injector for module");
@@ -316,7 +351,7 @@ impl Application {
             #[cfg(feature = "tracing")]
             debug!("Loading import {}", index + 1);
 
-            Self::load_module(module_injector.clone(), import);
+            self.load_module(module_injector.clone(), import);
         }
 
         #[cfg(feature = "tracing")]
@@ -344,6 +379,22 @@ mod tests {
     struct EmptyModule;
 
     impl Module for EmptyModule {
+        fn providers(&self, _injector: &Injector) {}
+    }
+
+    struct ImportedLookupModule;
+
+    impl Module for ImportedLookupModule {
+        fn providers(&self, _injector: &Injector) {}
+    }
+
+    struct RootLookupModule;
+
+    impl Module for RootLookupModule {
+        fn imports(&self) -> Vec<Box<dyn Module>> {
+            vec![Box::new(ImportedLookupModule)]
+        }
+
         fn providers(&self, _injector: &Injector) {}
     }
 
@@ -555,6 +606,22 @@ mod tests {
 
         #[cfg(not(feature = "thread-safe"))]
         assert_eq!(std::rc::Rc::strong_count(&injectors[0]), 6); // app + 5 in vec
+    }
+
+    #[test]
+    fn test_module_lookup_returns_none_before_bootstrap() {
+        let app = Application::new(RootLookupModule);
+        assert!(app.module::<RootLookupModule>().is_none());
+    }
+
+    #[test]
+    fn test_module_lookup_finds_root_and_imported_modules() {
+        let mut app = Application::new(RootLookupModule);
+        app.bootstrap();
+
+        assert!(app.module::<RootLookupModule>().is_some());
+        assert!(app.module::<ImportedLookupModule>().is_some());
+        assert!(app.module::<EmptyModule>().is_none());
     }
 
     #[cfg(feature = "debug")]
