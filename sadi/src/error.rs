@@ -46,6 +46,10 @@ pub enum ErrorKind {
     ProviderAlreadyRegistered,
     /// Circular dependency detected in resolution chain.
     CircularDependency,
+    /// Requested module was not found in application module graph.
+    ModuleNotFound,
+    /// More than one module matched a unique module lookup.
+    AmbiguousModule,
 }
 
 /// Container error structure.
@@ -112,6 +116,25 @@ impl Error {
             format!(
                 "Circular dependency detected: {}",
                 dependency_chain.join(" -> ")
+            ),
+        )
+    }
+
+    /// No module found for the requested module type.
+    pub fn module_not_found(type_name: &str) -> Self {
+        Self::new(
+            ErrorKind::ModuleNotFound,
+            format!("No module instance found for type: {}", type_name),
+        )
+    }
+
+    /// Multiple module instances found where a unique module was required.
+    pub fn ambiguous_module(type_name: &str, matches: usize) -> Self {
+        Self::new(
+            ErrorKind::AmbiguousModule,
+            format!(
+                "Ambiguous module lookup for type: {} (found {} instances)",
+                type_name, matches
             ),
         )
     }
@@ -183,5 +206,20 @@ mod tests {
         let err2 = Error::type_mismatch("B");
         assert!(err1.kind == err2.kind);
         assert_ne!(err1.message, err2.message);
+    }
+
+    #[test]
+    fn module_not_found_error() {
+        let err = Error::module_not_found("MyModule");
+        assert!(err.kind == ErrorKind::ModuleNotFound);
+        assert!(err.message.contains("MyModule"));
+    }
+
+    #[test]
+    fn ambiguous_module_error() {
+        let err = Error::ambiguous_module("MyModule", 3);
+        assert!(err.kind == ErrorKind::AmbiguousModule);
+        assert!(err.message.contains("MyModule"));
+        assert!(err.message.contains("3"));
     }
 }

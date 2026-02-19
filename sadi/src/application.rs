@@ -41,6 +41,7 @@
 use std::any::TypeId;
 use std::collections::HashMap;
 
+use crate::error::Error;
 use crate::injector::Injector;
 use crate::module::Module;
 use crate::module_instance::ModuleInstance;
@@ -96,8 +97,9 @@ pub struct Application {
     root: Option<Box<dyn Module>>,
     #[cfg(feature = "thread-safe")]
     root: Option<Box<dyn Module + Send + Sync>>,
+    root_module_type_id: Option<TypeId>,
     injector: Shared<Injector>,
-    modules: HashMap<TypeId, ModuleInstance>,
+    modules: HashMap<TypeId, Vec<ModuleInstance>>,
 }
 
 #[cfg(feature = "debug")]
@@ -106,7 +108,11 @@ impl std::fmt::Debug for Application {
         f.debug_struct("Application")
             .field("injector", &"...")
             .field("root", &"<dyn Module>")
-            .field("modules_count", &self.modules.len())
+            .field("root_module_type_id", &self.root_module_type_id)
+            .field(
+                "modules_count",
+                &self.modules.values().map(Vec::len).sum::<usize>(),
+            )
             .finish()
     }
 }
@@ -147,6 +153,7 @@ impl Application {
 
         Self {
             root: Some(Box::new(root)),
+            root_module_type_id: None,
             injector: Shared::new(Injector::root()),
             modules: HashMap::new(),
         }
@@ -201,11 +208,12 @@ impl Application {
     /// ```
     pub fn bootstrap(&mut self) {
         let root = self.root.take().expect("Application already bootstrapped");
+        self.root_module_type_id = Some(root.type_id());
 
         #[cfg(feature = "tracing")]
         info!("Starting application bootstrap process");
 
-        self.load_module(self.injector.clone(), root);
+        self.load_module(self.injector.clone(), root, None);
 
         #[cfg(feature = "tracing")]
         info!("Application bootstrap completed successfully");
@@ -270,8 +278,107 @@ impl Application {
     where
         T: Module + 'static,
     {
-        let type_id = TypeId::of::<T>();
-        self.modules.get(&type_id).map(|module| module.injector())
+        self.module_global::<T>().or_else(|| {
+            self.modules
+                .get(&TypeId::of::<T>())
+                .and_then(|modules| modules.first())
+                .map(|module| module.injector())
+        })
+    }
+
+    /// Returns a unique module injector for the given module type.
+    ///
+    /// Fails when no module is found or when multiple module instances exist.
+    /// In case of duplicates, prefer [`module_global`](Application::module_global)
+    /// or [`modules_in`](Application::modules_in) for explicit resolution.
+    pub fn try_module_unique<T>(&self) -> Result<&Injector, Error>
+    where
+        T: Module + 'static,
+    {
+        let modules = self
+            .modules
+            .get(&TypeId::of::<T>())
+            .ok_or_else(|| Error::module_not_found(std::any::type_name::<T>()))?;
+
+        if modules.is_empty() {
+            return Err(Error::module_not_found(std::any::type_name::<T>()));
+        }
+
+        if modules.len() > 1 {
+            return Err(Error::ambiguous_module(
+                std::any::type_name::<T>(),
+                modules.len(),
+            ));
+        }
+
+        Ok(modules[0].injector())
+    }
+
+    pub fn module_unique<T>(&self) -> &Injector
+    where
+        T: Module + 'static,
+    {
+        self.try_module_unique::<T>().unwrap()
+    }
+
+    /// Returns all module injectors for a given module type.
+    pub fn modules<T>(&self) -> Vec<&Injector>
+    where
+        T: Module + 'static,
+    {
+        self.modules
+            .get(&TypeId::of::<T>())
+            .map(|modules| modules.iter().map(|module| module.injector()).collect())
+            .unwrap_or_default()
+    }
+
+    /// Returns the global (application-level) module injector for the given type.
+    ///
+    /// A global module is one imported directly by the root module.
+    pub fn module_global<T>(&self) -> Option<&Injector>
+    where
+        T: Module + 'static,
+    {
+        let root_type_id = self.root_module_type_id?;
+        let target_type_id = TypeId::of::<T>();
+
+        self.modules
+            .get(&target_type_id)
+            .and_then(|modules| {
+                modules
+                    .iter()
+                    .find(|module| module.parent_type_id() == Some(root_type_id))
+                    .or_else(|| {
+                        if target_type_id == root_type_id {
+                            modules
+                                .iter()
+                                .find(|module| module.parent_type_id().is_none())
+                        } else {
+                            None
+                        }
+                    })
+            })
+            .map(|module| module.injector())
+    }
+
+    /// Returns all module injectors of type `T` that were loaded under parent module `P`.
+    pub fn modules_in<P, T>(&self) -> Vec<&Injector>
+    where
+        P: Module + 'static,
+        T: Module + 'static,
+    {
+        let parent_type_id = TypeId::of::<P>();
+
+        self.modules
+            .get(&TypeId::of::<T>())
+            .map(|modules| {
+                modules
+                    .iter()
+                    .filter(|module| module.parent_type_id() == Some(parent_type_id))
+                    .map(|module| module.injector())
+                    .collect()
+            })
+            .unwrap_or_default()
     }
 
     /// Checks whether the application has been bootstrapped.
@@ -321,7 +428,12 @@ impl Application {
     ///
     /// - `parent`: The parent injector to create a child from
     /// - `module`: The module to load
-    fn load_module(&mut self, parent: Shared<Injector>, module: Box<dyn Module>) {
+    fn load_module(
+        &mut self,
+        parent: Shared<Injector>,
+        module: Box<dyn Module>,
+        parent_module_type_id: Option<TypeId>,
+    ) {
         #[cfg(feature = "tracing")]
         debug!("Loading module into injector hierarchy");
 
@@ -333,9 +445,16 @@ impl Application {
 
         let module_injector = Shared::new(Injector::child(parent.clone()));
 
+        let module_type_id = module.type_id();
+
         self.modules
-            .entry(module.type_id())
-            .or_insert_with(|| ModuleInstance::new(module.as_ref(), module_injector.as_ref().clone()));
+            .entry(module_type_id)
+            .or_default()
+            .push(ModuleInstance::new(
+                module.as_ref(),
+                module_injector.as_ref().clone(),
+                parent_module_type_id,
+            ));
 
         #[cfg(feature = "tracing")]
         debug!("Created child injector for module");
@@ -351,7 +470,7 @@ impl Application {
             #[cfg(feature = "tracing")]
             debug!("Loading import {}", index + 1);
 
-            self.load_module(module_injector.clone(), import);
+            self.load_module(module_injector.clone(), import, Some(module_type_id));
         }
 
         #[cfg(feature = "tracing")]
@@ -393,6 +512,40 @@ mod tests {
     impl Module for RootLookupModule {
         fn imports(&self) -> Vec<Box<dyn Module>> {
             vec![Box::new(ImportedLookupModule)]
+        }
+
+        fn providers(&self, _injector: &Injector) {}
+    }
+
+    struct ModuleA;
+    struct ModuleB;
+    struct ModuleC;
+
+    impl Module for ModuleA {
+        fn imports(&self) -> Vec<Box<dyn Module>> {
+            vec![Box::new(ModuleB)]
+        }
+
+        fn providers(&self, _injector: &Injector) {}
+    }
+
+    impl Module for ModuleB {
+        fn providers(&self, _injector: &Injector) {}
+    }
+
+    impl Module for ModuleC {
+        fn imports(&self) -> Vec<Box<dyn Module>> {
+            vec![Box::new(ModuleB)]
+        }
+
+        fn providers(&self, _injector: &Injector) {}
+    }
+
+    struct RootWithRepeatedB;
+
+    impl Module for RootWithRepeatedB {
+        fn imports(&self) -> Vec<Box<dyn Module>> {
+            vec![Box::new(ModuleA), Box::new(ModuleB), Box::new(ModuleC)]
         }
 
         fn providers(&self, _injector: &Injector) {}
@@ -622,6 +775,37 @@ mod tests {
         assert!(app.module::<RootLookupModule>().is_some());
         assert!(app.module::<ImportedLookupModule>().is_some());
         assert!(app.module::<EmptyModule>().is_none());
+    }
+
+    #[test]
+    fn test_module_lookup_supports_global_and_contextual_resolution() {
+        let mut app = Application::new(RootWithRepeatedB);
+        app.bootstrap();
+
+        let all_b = app.modules::<ModuleB>();
+        assert_eq!(all_b.len(), 3);
+
+        assert!(app.module_global::<ModuleB>().is_some());
+        assert_eq!(app.modules_in::<ModuleA, ModuleB>().len(), 1);
+        assert_eq!(app.modules_in::<ModuleC, ModuleB>().len(), 1);
+    }
+
+    #[test]
+    fn test_module_unique_returns_single_module() {
+        let mut app = Application::new(RootLookupModule);
+        app.bootstrap();
+
+        let module = app.try_module_unique::<ImportedLookupModule>();
+        assert!(module.is_ok());
+    }
+
+    #[test]
+    fn test_module_unique_fails_for_ambiguous_module() {
+        let mut app = Application::new(RootWithRepeatedB);
+        app.bootstrap();
+
+        let err = app.try_module_unique::<ModuleB>().unwrap_err();
+        assert_eq!(err.kind, crate::error::ErrorKind::AmbiguousModule);
     }
 
     #[cfg(feature = "debug")]
