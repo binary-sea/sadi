@@ -106,6 +106,70 @@ use crate::injector::Injector;
 /// ```
 #[cfg(not(feature = "thread-safe"))]
 pub trait Module {
+    /// Returns the unique type identifier for this module.
+    ///
+    /// This method provides runtime type identification for modules, which can be useful
+    /// for debugging, logging, or implementing module deduplication logic.
+    ///
+    /// # Returns
+    ///
+    /// A [`TypeId`](std::any::TypeId) that uniquely identifies the concrete type of this module.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use sadi::module::Module;
+    /// use sadi::injector::Injector;
+    /// use std::any::TypeId;
+    ///
+    /// struct MyModule;
+    /// impl Module for MyModule {
+    ///     fn providers(&self, injector: &Injector) {}
+    /// }
+    ///
+    /// let module = MyModule;
+    /// let type_id = module.type_id();
+    /// assert_eq!(type_id, TypeId::of::<MyModule>());
+    /// ```
+    fn type_id(&self) -> std::any::TypeId
+    where
+        Self: 'static,
+    {
+        std::any::TypeId::of::<Self>()
+    }
+
+    /// Returns the type name of this module as a string.
+    ///
+    /// This method provides a human-readable representation of the module's type,
+    /// which is particularly useful for debugging, logging, and error messages.
+    ///
+    /// # Returns
+    ///
+    /// A static string slice containing the fully-qualified type name of this module.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use sadi::module::Module;
+    /// use sadi::injector::Injector;
+    ///
+    /// struct DatabaseModule;
+    /// impl Module for DatabaseModule {
+    ///     fn providers(&self, injector: &Injector) {}
+    /// }
+    ///
+    /// let module = DatabaseModule;
+    /// let name = module.type_name();
+    /// // The exact format depends on the module path
+    /// assert!(name.contains("DatabaseModule"));
+    /// ```
+    fn type_name(&self) -> &'static str
+    where
+        Self: 'static,
+    {
+        std::any::type_name::<Self>()
+    }
+
     /// Returns a list of modules that this module imports.
     ///
     /// Imported modules have their providers registered before this module's providers.
@@ -173,6 +237,70 @@ pub trait Module {
 
 #[cfg(feature = "thread-safe")]
 pub trait Module: Send + Sync {
+    /// Returns the unique type identifier for this module.
+    ///
+    /// This method provides runtime type identification for modules, which can be useful
+    /// for debugging, logging, or implementing module deduplication logic.
+    ///
+    /// # Returns
+    ///
+    /// A [`TypeId`](std::any::TypeId) that uniquely identifies the concrete type of this module.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use sadi::module::Module;
+    /// use sadi::injector::Injector;
+    /// use std::any::TypeId;
+    ///
+    /// struct MyModule;
+    /// impl Module for MyModule {
+    ///     fn providers(&self, injector: &Injector) {}
+    /// }
+    ///
+    /// let module = MyModule;
+    /// let type_id = module.type_id();
+    /// assert_eq!(type_id, TypeId::of::<MyModule>());
+    /// ```
+    fn type_id(&self) -> std::any::TypeId
+    where
+        Self: 'static,
+    {
+        std::any::TypeId::of::<Self>()
+    }
+
+    /// Returns the type name of this module as a string.
+    ///
+    /// This method provides a human-readable representation of the module's type,
+    /// which is particularly useful for debugging, logging, and error messages.
+    ///
+    /// # Returns
+    ///
+    /// A static string slice containing the fully-qualified type name of this module.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use sadi::module::Module;
+    /// use sadi::injector::Injector;
+    ///
+    /// struct DatabaseModule;
+    /// impl Module for DatabaseModule {
+    ///     fn providers(&self, injector: &Injector) {}
+    /// }
+    ///
+    /// let module = DatabaseModule;
+    /// let name = module.type_name();
+    /// // The exact format depends on the module path
+    /// assert!(name.contains("DatabaseModule"));
+    /// ```
+    fn type_name(&self) -> &'static str
+    where
+        Self: 'static,
+    {
+        std::any::type_name::<Self>()
+    }
+
     /// Returns a list of modules that this module imports.
     ///
     /// Imported modules have their providers registered before this module's providers.
