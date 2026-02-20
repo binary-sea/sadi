@@ -102,6 +102,34 @@ pub struct Application {
     modules: HashMap<TypeId, Vec<ModuleInstance>>,
 }
 
+/// Represents a node in the bootstrapped module hierarchy tree.
+#[derive(Clone)]
+#[cfg_attr(feature = "debug", derive(Debug))]
+pub struct ModuleTreeNode {
+    type_name: String,
+    type_id: TypeId,
+    instances: usize,
+    children: Vec<ModuleTreeNode>,
+}
+
+impl ModuleTreeNode {
+    pub fn type_name(&self) -> &str {
+        &self.type_name
+    }
+
+    pub fn type_id(&self) -> TypeId {
+        self.type_id
+    }
+
+    pub fn instances(&self) -> usize {
+        self.instances
+    }
+
+    pub fn children(&self) -> &[ModuleTreeNode] {
+        &self.children
+    }
+}
+
 #[cfg(feature = "debug")]
 impl std::fmt::Debug for Application {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
@@ -379,6 +407,71 @@ impl Application {
                     .collect()
             })
             .unwrap_or_default()
+    }
+
+    /// Returns the module hierarchy tree as loaded during bootstrap.
+    ///
+    /// Returns `None` when the application has not been bootstrapped yet.
+    pub fn module_tree(&self) -> Option<ModuleTreeNode> {
+        let root_type_id = self.root_module_type_id?;
+
+        let mut children_by_parent: HashMap<TypeId, Vec<TypeId>> = HashMap::new();
+
+        for module_instances in self.modules.values() {
+            for module in module_instances {
+                if let Some(parent_type_id) = module.parent_type_id() {
+                    let children = children_by_parent.entry(parent_type_id).or_default();
+                    if !children.contains(&module.type_id()) {
+                        children.push(module.type_id());
+                    }
+                }
+            }
+        }
+
+        fn build_node(
+            app: &Application,
+            children_by_parent: &HashMap<TypeId, Vec<TypeId>>,
+            current_type_id: TypeId,
+            path: &mut Vec<TypeId>,
+        ) -> Option<ModuleTreeNode> {
+            let modules = app.modules.get(&current_type_id)?;
+            let type_name = modules.first()?.type_name().to_string();
+            let instances = modules.len();
+
+            if path.contains(&current_type_id) {
+                return Some(ModuleTreeNode {
+                    type_name,
+                    type_id: current_type_id,
+                    instances,
+                    children: vec![],
+                });
+            }
+
+            path.push(current_type_id);
+
+            let children = children_by_parent
+                .get(&current_type_id)
+                .map(|children| {
+                    children
+                        .iter()
+                        .filter_map(|child_type_id| {
+                            build_node(app, children_by_parent, *child_type_id, path)
+                        })
+                        .collect()
+                })
+                .unwrap_or_default();
+
+            path.pop();
+
+            Some(ModuleTreeNode {
+                type_name,
+                type_id: current_type_id,
+                instances,
+                children,
+            })
+        }
+
+        build_node(self, &children_by_parent, root_type_id, &mut vec![])
     }
 
     /// Checks whether the application has been bootstrapped.
@@ -806,6 +899,35 @@ mod tests {
 
         let err = app.try_module_unique::<ModuleB>().unwrap_err();
         assert_eq!(err.kind, crate::error::ErrorKind::AmbiguousModule);
+    }
+
+    #[test]
+    fn test_module_tree_returns_none_before_bootstrap() {
+        let app = Application::new(RootLookupModule);
+        assert!(app.module_tree().is_none());
+    }
+
+    #[test]
+    fn test_module_tree_returns_hierarchy_structure() {
+        fn find_child(node: &ModuleTreeNode, child_type_id: TypeId) -> Option<&ModuleTreeNode> {
+            node.children()
+                .iter()
+                .find(|child| child.type_id() == child_type_id)
+        }
+
+        let mut app = Application::new(RootWithRepeatedB);
+        app.bootstrap();
+
+        let tree = app.module_tree().expect("module tree should exist");
+        assert_eq!(tree.type_id(), TypeId::of::<RootWithRepeatedB>());
+
+        let module_a = find_child(&tree, TypeId::of::<ModuleA>()).expect("missing ModuleA");
+        let module_b = find_child(&tree, TypeId::of::<ModuleB>()).expect("missing ModuleB");
+        let module_c = find_child(&tree, TypeId::of::<ModuleC>()).expect("missing ModuleC");
+
+        assert_eq!(module_b.instances(), 3);
+        assert!(find_child(module_a, TypeId::of::<ModuleB>()).is_some());
+        assert!(find_child(module_c, TypeId::of::<ModuleB>()).is_some());
     }
 
     #[cfg(feature = "debug")]

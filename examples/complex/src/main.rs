@@ -13,7 +13,6 @@ async fn main() -> Result<(), String> {
 
     // Build the application with dependency injection
     let app = infra::di::build().expect("Failed to build application");
-    println!("✓ Application built successfully\n");
 
     // Verify SqliteClient was initialized
     let sqlite_client = app
